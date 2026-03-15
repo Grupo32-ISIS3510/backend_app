@@ -1,6 +1,4 @@
-# App Name
-
-App Description
+# Second Serving
 
 ---
 
