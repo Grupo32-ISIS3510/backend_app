@@ -1,0 +1,40 @@
+# ── Web framework ──────────────────────────────────────────
+fastapi==0.111.0
+uvicorn[standard]==0.29.0       # Servidor ASGI que corre FastAPI
+
+# ── Base de datos y ORM ────────────────────────────────────
+sqlalchemy==2.0.30              # ORM principal
+alembic==1.13.1                 # Migraciones de base de datos
+psycopg2-binary==2.9.9          # Driver para conectar Python con PostgreSQL
+
+# ── Validación de datos ────────────────────────────────────
+pydantic==2.7.1                 # Validación de schemas (ya viene con FastAPI)
+pydantic-settings==2.2.1        # Leer variables de entorno desde .env
+
+# ── Autenticación ──────────────────────────────────────────
+python-jose[cryptography]==3.3.0  # Generar y verificar tokens JWT
+passlib[bcrypt]==1.7.4            # Hash seguro de contraseñas
+bcrypt==4.0.1
+
+# ── Variables de entorno ───────────────────────────────────
+python-dotenv==1.0.1            # Cargar el archivo .env automáticamente
+
+# ── Tareas asíncronas (scheduling de alertas) ─────────────
+apscheduler==3.10.4             # Scheduler simple para MVP (sin Redis)
+
+# ── Notificaciones push ────────────────────────────────────
+firebase-admin==6.5.0           # SDK oficial de Firebase para enviar push via FCM
+
+# ── OCR (escaneo de recibos) ───────────────────────────────
+google-cloud-vision==3.7.2      # API de Google para reconocimiento de texto en imágenes
+
+# ── Almacenamiento de imágenes ─────────────────────────────
+cloudinary==1.40.0              # Subir y gestionar imágenes en la nube
+
+# ── Utilidades HTTP ────────────────────────────────────────
+httpx==0.27.0                   # Cliente HTTP async (para llamar APIs externas)
+
+# ── Testing ────────────────────────────────────────────────
+pytest==8.2.0
+pytest-asyncio==0.23.6
+httpx==0.27.0                   # También se usa para simular requests en tests
