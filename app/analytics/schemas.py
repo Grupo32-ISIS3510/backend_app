@@ -9,10 +9,10 @@ from pydantic import BaseModel, Field
 
 class AnalyticsEventCreate(BaseModel):
     event_name: str = Field(..., max_length=100)
-    properties: dict | None = None
-    session_id: str | None = Field(None, max_length=100)
-    platform: str | None = Field(None, max_length=20)
-    app_version: str | None = Field(None, max_length=20)
+    properties: Optional[dict] = None
+    session_id: Optional[str] = Field(None, max_length=100)
+    platform: Optional[str] = Field(None, max_length=20)
+    app_version: Optional[str] = Field(None, max_length=20)
     occurred_at: datetime
 
 
