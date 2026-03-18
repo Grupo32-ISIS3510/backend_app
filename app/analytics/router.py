@@ -8,7 +8,10 @@ from app.common.dependencies import get_current_user
 from app.auth.models import User
 from app.analytics import service as analytics_service
 from app.analytics.schemas import (
+    AnalyticsEventBatch,
+    AnalyticsEventResponse,
     DashboardResponse,
+    EventsSummaryResponse,
     SavingsResponse,
     UserSegmentResponse,
     WasteSummaryResponse,
@@ -19,6 +22,30 @@ router = APIRouter(prefix="/api/v1/analytics", tags=["Analytics"])
 
 _now = datetime.utcnow()
 
+
+# ── Pipeline: Capture ────────────────────────────────────────────────────────
+
+@router.post("/events", response_model=AnalyticsEventResponse, status_code=201)
+def ingest_events(
+    batch: AnalyticsEventBatch,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Recibe un batch de eventos analytics desde el cliente móvil (max 100 por request)."""
+    return analytics_service.record_events(db, current_user.id, batch)
+
+
+@router.get("/events/summary", response_model=EventsSummaryResponse)
+def get_events_summary(
+    days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Resumen de eventos analytics agrupados por tipo en los últimos N días."""
+    return analytics_service.get_events_summary(db, current_user.id, days)
+
+
+# ── Pipeline: Consume ────────────────────────────────────────────────────────
 
 @router.get("/savings", response_model=SavingsResponse)
 def get_savings(
