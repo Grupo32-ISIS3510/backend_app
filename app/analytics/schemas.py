@@ -1,7 +1,44 @@
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, List, Dict, Any
+from datetime import datetime
+from pydantic import BaseModel, UUID4
 
-from pydantic import BaseModel
+
+# ── Analytics Events (Event Ingestion) ───────────────────────────────────────
+
+class AnalyticsEventCreate(BaseModel):
+    """Schema para recibir un evento de analytics desde el frontend."""
+    event_name: str
+    user_id: UUID4
+    timestamp: int  # Unix timestamp en milisegundos
+    properties: Optional[Dict[str, Any]] = None
+
+
+class AnalyticsEventBatchRequest(BaseModel):
+    """Schema para recibir un batch de eventos de analytics."""
+    events: List[AnalyticsEventCreate]
+
+
+class AnalyticsEventResponse(BaseModel):
+    """Schema de respuesta para un evento de analytics almacenado."""
+    id: UUID4
+    event_name: str
+    timestamp: int
+    properties: Optional[Dict[str, Any]] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AnalyticsEventBatchResponse(BaseModel):
+    """Respuesta para el endpoint de batch de eventos."""
+    status: str
+    events_received: int
+    message: str
+
+
+# ── Analytics Dashboard (Read-Only) ──────────────────────────────────────────
 
 
 class SavingsResponse(BaseModel):

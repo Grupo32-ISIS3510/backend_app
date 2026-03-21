@@ -7,13 +7,47 @@ from sqlalchemy.orm import Session
 
 from app.inventory.models import InventoryEvent, InventoryItem
 from app.recipes.models import RecipeInteraction
+from app.analytics.models import AnalyticsEvent
 from app.analytics.schemas import (
+    AnalyticsEventCreate,
     DashboardResponse,
     SavingsResponse,
     UserSegmentResponse,
     WasteSummaryResponse,
     WasteTrendItem,
 )
+
+
+# ── Analytics Event Ingestion ────────────────────────────────────────────────
+
+def store_analytics_events(
+    db: Session, user_id: uuid.UUID, events: list[AnalyticsEventCreate]
+) -> int:
+    """
+    Almacena un batch de eventos de analytics en la base de datos.
+    Retorna el número de eventos almacenados exitosamente.
+    """
+    stored_count = 0
+    
+    for event_data in events:
+        # Validar que el user_id del evento coincida con el usuario autenticado
+        if event_data.user_id != user_id:
+            continue
+            
+        event = AnalyticsEvent(
+            user_id=event_data.user_id,
+            event_name=event_data.event_name,
+            timestamp=event_data.timestamp,
+            properties=event_data.properties,
+        )
+        db.add(event)
+        stored_count += 1
+    
+    db.commit()
+    return stored_count
+
+
+# ── Analytics Dashboard (Read-Only) ──────────────────────────────────────────
 
 
 def get_monthly_savings(

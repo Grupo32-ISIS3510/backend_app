@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -8,6 +8,8 @@ from app.common.dependencies import get_current_user
 from app.auth.models import User
 from app.analytics import service as analytics_service
 from app.analytics.schemas import (
+    AnalyticsEventBatchRequest,
+    AnalyticsEventBatchResponse,
     DashboardResponse,
     SavingsResponse,
     UserSegmentResponse,
@@ -18,6 +20,25 @@ from app.analytics.schemas import (
 router = APIRouter(prefix="/api/v1/analytics", tags=["Analytics"])
 
 _now = datetime.utcnow()
+
+
+@router.post("/events", response_model=AnalyticsEventBatchResponse, status_code=status.HTTP_201_CREATED)
+def store_events(
+    data: AnalyticsEventBatchRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Almacena un batch de eventos de analytics enviados desde el frontend.
+    Los eventos se usan para análisis de comportamiento y mejoras de la app.
+    """
+    stored_count = analytics_service.store_analytics_events(db, current_user.id, data.events)
+    
+    return AnalyticsEventBatchResponse(
+        status="success",
+        events_received=stored_count,
+        message=f"{stored_count} eventos almacenados exitosamente."
+    )
 
 
 @router.get("/savings", response_model=SavingsResponse)
