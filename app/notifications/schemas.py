@@ -22,3 +22,20 @@ class NotificationPreferenceResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class TestSendSelfRequest(BaseModel):
+    title: Optional[str] = None
+    body: Optional[str] = None
+    route: str = "/home"
+    item_id: Optional[str] = None
+    item_name: Optional[str] = None
+    days_remaining: Optional[int] = None
+
+
+class NotificationDispatchReport(BaseModel):
+    status: str
+    sent_count: int
+    failed_count: int
+    invalid_tokens_count: int
+    reason: Optional[str] = None

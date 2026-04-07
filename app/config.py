@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     app_env: str = "development"
     app_name: str = "Second Serving Backend"
 
+    # Notificaciones
+    notifications_scheduler_hours: int = 1
+    notifications_qa_endpoint_enabled: bool = True
+
     # Servicios externos (opcionales en desarrollo)
     firebase_credentials_path: str = ""
     google_application_credentials: str = ""
