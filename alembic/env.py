@@ -10,6 +10,7 @@ from app.inventory.models import InventoryItem, InventoryEvent
 from app.notifications.models import DeviceToken, NotificationPreference
 from app.recipes.models import Recipe, RecipeIngredient, RecipeInteraction
 from app.sync.models import SyncLog
+from app.telemetry.models import ScanEvent
 
 config = context.config
 settings = get_settings()
