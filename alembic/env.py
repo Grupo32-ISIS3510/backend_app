@@ -7,10 +7,11 @@ from app.database import Base
 # Se importan todos los modelos aquí para que Alembic los detecte
 from app.auth.models import User
 from app.inventory.models import InventoryItem, InventoryEvent
-from app.notifications.models import DeviceToken, NotificationPreference
+from app.notifications.models import DeviceToken, NotificationPreference, NotificationDispatch
 from app.recipes.models import Recipe, RecipeIngredient, RecipeInteraction
 from app.sync.models import SyncLog
 from app.telemetry.models import ScanEvent
+from app.analytics.models import AnalyticsEvent
 
 config = context.config
 settings = get_settings()

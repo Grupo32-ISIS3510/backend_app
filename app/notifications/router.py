@@ -8,7 +8,9 @@ from app.notifications import service as notif_service
 from app.notifications.schemas import (
     DeviceTokenRegister,
     NotificationPreferenceUpdate,
-    NotificationPreferenceResponse
+    NotificationPreferenceResponse,
+    TestSendSelfRequest,
+    NotificationDispatchReport,
 )
 
 router = APIRouter(prefix="/api/v1/notifications", tags=["Notificaciones"])
@@ -39,3 +41,12 @@ def update_preferences(
     current_user: User = Depends(get_current_user)
 ):
     return notif_service.update_preferences(db, current_user.id, data)
+
+
+@router.post("/test/send-self", response_model=NotificationDispatchReport)
+def send_test_push_to_self(
+    data: TestSendSelfRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return notif_service.send_test_push_to_self(db, current_user.id, data)

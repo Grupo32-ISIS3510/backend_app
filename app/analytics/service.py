@@ -7,13 +7,69 @@ from sqlalchemy.orm import Session
 
 from app.inventory.models import InventoryEvent, InventoryItem
 from app.recipes.models import RecipeInteraction
+from app.analytics.models import AnalyticsEvent
 from app.analytics.schemas import (
+    AnalyticsEventBatch,
+    AnalyticsEventResponse,
     DashboardResponse,
+    EventCount,
+    EventsSummaryResponse,
     SavingsResponse,
     UserSegmentResponse,
     WasteSummaryResponse,
     WasteTrendItem,
 )
+
+
+def record_events(
+    db: Session, user_id: uuid.UUID, batch: AnalyticsEventBatch
+) -> AnalyticsEventResponse:
+    """Persiste un batch de eventos analytics enviados desde el cliente móvil."""
+    objects = [
+        AnalyticsEvent(
+            user_id=user_id,
+            event_name=evt.event_name,
+            properties=evt.properties,
+            session_id=evt.session_id,
+            platform=evt.platform,
+            app_version=evt.app_version,
+            occurred_at=evt.occurred_at,
+        )
+        for evt in batch.events
+    ]
+    db.bulk_save_objects(objects)
+    db.commit()
+    return AnalyticsEventResponse(received=len(objects), duplicates_skipped=0)
+
+
+def get_events_summary(
+    db: Session, user_id: uuid.UUID, days: int
+) -> EventsSummaryResponse:
+    """Resumen de eventos analytics agrupados por event_name en los últimos N días."""
+    since = datetime.utcnow() - timedelta(days=days)
+
+    total = (
+        db.query(func.count(AnalyticsEvent.id))
+        .filter(AnalyticsEvent.user_id == user_id, AnalyticsEvent.occurred_at >= since)
+        .scalar() or 0
+    )
+
+    rows = (
+        db.query(
+            AnalyticsEvent.event_name,
+            func.count(AnalyticsEvent.id).label("cnt"),
+        )
+        .filter(AnalyticsEvent.user_id == user_id, AnalyticsEvent.occurred_at >= since)
+        .group_by(AnalyticsEvent.event_name)
+        .order_by(func.count(AnalyticsEvent.id).desc())
+        .all()
+    )
+
+    return EventsSummaryResponse(
+        total_events=total,
+        period_days=days,
+        breakdown=[EventCount(event_name=r.event_name, count=r.cnt) for r in rows],
+    )
 
 
 def get_monthly_savings(
@@ -188,9 +244,27 @@ def get_user_segment(db: Session, user_id: uuid.UUID) -> UserSegmentResponse:
         .scalar() or 0
     )
 
-    # NotificationInteraction no existe en esta versión del MVP;
-    # open_rate se reserva para cuando se implemente el tracking de notificaciones.
-    open_rate: float = 0.0
+    notif_received = (
+        db.query(func.count(AnalyticsEvent.id))
+        .filter(
+            AnalyticsEvent.user_id == user_id,
+            AnalyticsEvent.event_name == "notification_received",
+            AnalyticsEvent.occurred_at >= since,
+        )
+        .scalar() or 0
+    )
+
+    notif_opened = (
+        db.query(func.count(AnalyticsEvent.id))
+        .filter(
+            AnalyticsEvent.user_id == user_id,
+            AnalyticsEvent.event_name == "notification_opened",
+            AnalyticsEvent.occurred_at >= since,
+        )
+        .scalar() or 0
+    )
+
+    open_rate = (notif_opened / notif_received) if notif_received > 0 else 0.0
 
     if open_rate >= 0.6 and recipes_cooked >= 3:
         segment = "proactive"
@@ -202,7 +276,7 @@ def get_user_segment(db: Session, user_id: uuid.UUID) -> UserSegmentResponse:
     return UserSegmentResponse(
         segment=segment,
         recipes_cooked_last_30_days=recipes_cooked,
-        open_rate=open_rate,
+        open_rate=round(open_rate, 2),
     )
 
 
@@ -212,6 +286,7 @@ def get_dashboard(
     """Agrega todas las métricas en un solo response para el cliente móvil."""
     return DashboardResponse(
         savings=get_monthly_savings(db, user_id, month, year),
+        waste_trends=get_waste_trends(db, user_id, months=3),
         waste_summary=get_waste_summary(db, user_id),
         segment=get_user_segment(db, user_id),
     )

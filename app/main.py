@@ -60,7 +60,11 @@ def scheduled_expiry_check():
 
 # Iniciar el scheduler cuando arranca el servidor
 scheduler = BackgroundScheduler()
-scheduler.add_job(scheduled_expiry_check, "interval", hours=1)
+scheduler.add_job(
+    scheduled_expiry_check,
+    "interval",
+    hours=max(1, settings.notifications_scheduler_hours),
+)
 scheduler.start()
 
 

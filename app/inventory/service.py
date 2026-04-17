@@ -6,7 +6,7 @@ from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.inventory.models import InventoryItem, InventoryEvent
-from app.inventory.schemas import ItemCreate, ItemUpdate, ItemDiscard
+from app.inventory.schemas import ItemCreate, ItemUpdate, ItemDiscard, BulkItemsCreate
 from app.common.exceptions import AppException, ErrorCode
 
 
@@ -56,6 +56,31 @@ def create_item(db: Session, user_id: uuid.UUID, data: ItemCreate) -> InventoryI
     db.commit()
     db.refresh(item)
     return item
+
+
+def bulk_create_items(db: Session, user_id: uuid.UUID, data: BulkItemsCreate) -> list[InventoryItem]:
+    """Crea múltiples items en una sola transacción — ideal para escaneo OCR de recibos."""
+    created_items: list[InventoryItem] = []
+
+    for item_data in data.items:
+        item = InventoryItem(user_id=user_id, **item_data.model_dump())
+        db.add(item)
+        db.flush()
+
+        event = InventoryEvent(
+            user_id=user_id,
+            item_id=item.id,
+            event_type="registered",
+            quantity=item_data.quantity,
+            unit_price=item_data.unit_price,
+        )
+        db.add(event)
+        created_items.append(item)
+
+    db.commit()
+    for item in created_items:
+        db.refresh(item)
+    return created_items
 
 
 def update_item(db: Session, user_id: uuid.UUID, item_id: uuid.UUID, data: ItemUpdate):
