@@ -1,24 +1,95 @@
-from datetime import datetime, timedelta
+from collections import defaultdict
+from datetime import date, datetime, timedelta
 from decimal import Decimal
+from typing import Optional
 import uuid
 
 from sqlalchemy import Date, cast, extract, func
 from sqlalchemy.orm import Session
 
+from app.auth.models import User
 from app.inventory.models import InventoryEvent, InventoryItem
 from app.recipes.models import RecipeInteraction
 from app.analytics.models import AnalyticsEvent
 from app.analytics.schemas import (
     AnalyticsEventBatch,
     AnalyticsEventResponse,
+    CategoryTrendItem,
     DashboardResponse,
     EventCount,
     EventsSummaryResponse,
+    MarketProductTrendsResponse,
+    ProductTrendItem,
     SavingsResponse,
+    SeedDemoResponse,
     UserSegmentResponse,
     WasteSummaryResponse,
     WasteTrendItem,
 )
+
+
+# ── T4.2 seed constants ───────────────────────────────────────────────────────
+
+_DEMO_USERS = [
+    {"email": "demo_mercado_1@secondserving.demo", "full_name": "Ana García",       "location": "Bogotá"},
+    {"email": "demo_mercado_2@secondserving.demo", "full_name": "Carlos Rodríguez", "location": "Medellín"},
+    {"email": "demo_mercado_3@secondserving.demo", "full_name": "María López",      "location": "Cali"},
+    {"email": "demo_mercado_4@secondserving.demo", "full_name": "José Martínez",    "location": "Barranquilla"},
+    {"email": "demo_mercado_5@secondserving.demo", "full_name": "Laura Hernández",  "location": "Bucaramanga"},
+    {"email": "demo_mercado_6@secondserving.demo", "full_name": "Diego Vargas",     "location": "Cartagena"},
+]
+
+# name → (category, unit, unit_price_cop)
+_CATALOG: dict[str, tuple[str, str, int]] = {
+    "Leche":            ("Lácteos",    "litros",    3_500),
+    "Queso Campesino":  ("Lácteos",    "kg",       18_000),
+    "Yogur Natural":    ("Lácteos",    "unidades",  4_500),
+    "Mantequilla":      ("Lácteos",    "kg",       22_000),
+    "Huevos":           ("Proteínas",  "unidades",    800),
+    "Pechuga de Pollo": ("Proteínas",  "kg",       15_000),
+    "Atún en Lata":     ("Proteínas",  "unidades",  6_500),
+    "Lenteja":          ("Proteínas",  "kg",        5_200),
+    "Arroz Blanco":     ("Cereales",   "kg",        4_200),
+    "Avena":            ("Cereales",   "kg",        5_600),
+    "Pan Tajado":       ("Cereales",   "unidades",  7_000),
+    "Banano":           ("Frutas",     "kg",        2_800),
+    "Manzana":          ("Frutas",     "kg",        6_500),
+    "Naranja":          ("Frutas",     "kg",        3_500),
+    "Tomate":           ("Verduras",   "kg",        4_500),
+    "Cebolla":          ("Verduras",   "kg",        3_800),
+    "Lechuga":          ("Verduras",   "unidades",  3_000),
+    "Zanahoria":        ("Verduras",   "kg",        3_200),
+    "Papa":             ("Verduras",   "kg",        2_800),
+    "Aceite de Cocina": ("Abarrotes",  "litros",   12_000),
+    "Azúcar":           ("Abarrotes",  "kg",        3_500),
+    "Café Molido":      ("Bebidas",    "kg",       28_000),
+    "Jugo de Naranja":  ("Bebidas",    "litros",    5_500),
+    "Agua Mineral":     ("Bebidas",    "litros",    2_000),
+}
+
+# list of (product_name, times_bought) per demo user (same order as _DEMO_USERS)
+_USER_PURCHASES: list[list[tuple[str, int]]] = [
+    # Ana García – compras familiares típicas
+    [("Leche", 3), ("Arroz Blanco", 3), ("Huevos", 3), ("Tomate", 2),
+     ("Banano", 2), ("Pan Tajado", 2), ("Queso Campesino", 2), ("Café Molido", 2),
+     ("Aceite de Cocina", 1), ("Lechuga", 1)],
+    # Carlos Rodríguez – dieta alta en proteínas
+    [("Leche", 2), ("Arroz Blanco", 2), ("Pechuga de Pollo", 3), ("Zanahoria", 2),
+     ("Papa", 3), ("Lenteja", 2), ("Avena", 1), ("Manzana", 2), ("Huevos", 2)],
+    # María López – frutas y verduras
+    [("Yogur Natural", 2), ("Leche", 2), ("Banano", 3), ("Naranja", 2),
+     ("Tomate", 3), ("Cebolla", 2), ("Arroz Blanco", 2), ("Azúcar", 2), ("Manzana", 1)],
+    # José Martínez – soltero, productos prácticos
+    [("Huevos", 3), ("Atún en Lata", 2), ("Arroz Blanco", 3), ("Pan Tajado", 3),
+     ("Café Molido", 3), ("Jugo de Naranja", 2), ("Agua Mineral", 2), ("Leche", 1)],
+    # Laura Hernández – amante de los lácteos
+    [("Leche", 3), ("Queso Campesino", 3), ("Mantequilla", 2), ("Arroz Blanco", 2),
+     ("Papa", 2), ("Cebolla", 3), ("Tomate", 2), ("Manzana", 2), ("Yogur Natural", 1)],
+    # Diego Vargas – dieta costeña
+    [("Pechuga de Pollo", 2), ("Huevos", 2), ("Arroz Blanco", 3), ("Banano", 2),
+     ("Naranja", 3), ("Agua Mineral", 3), ("Aceite de Cocina", 2), ("Azúcar", 2),
+     ("Lenteja", 1)],
+]
 
 
 def record_events(
@@ -289,4 +360,247 @@ def get_dashboard(
         waste_trends=get_waste_trends(db, user_id, months=3),
         waste_summary=get_waste_summary(db, user_id),
         segment=get_user_segment(db, user_id),
+    )
+
+
+# ── T4.2 ─────────────────────────────────────────────────────────────────────
+
+def get_top_products(
+    db: Session,
+    top_n: int = 10,
+    category: Optional[str] = None,
+    min_users: int = 1,
+) -> MarketProductTrendsResponse:
+    """T4.2 – Productos con mayor frecuencia de consumo y tasa de recompra (cross-user)."""
+
+    # Step 1: consumption counts aggregated across ALL users
+    q = (
+        db.query(
+            func.lower(InventoryItem.name).label("product_name"),
+            InventoryItem.category.label("category"),
+            func.count(InventoryEvent.id).label("consumption_count"),
+            func.count(func.distinct(InventoryEvent.user_id)).label("unique_users"),
+        )
+        .join(InventoryItem, InventoryEvent.item_id == InventoryItem.id)
+        .filter(InventoryEvent.event_type == "consumed")
+    )
+
+    if category:
+        q = q.filter(func.lower(InventoryItem.category) == category.lower())
+
+    consumption_rows = (
+        q.group_by(func.lower(InventoryItem.name), InventoryItem.category)
+        .having(func.count(func.distinct(InventoryEvent.user_id)) >= min_users)
+        .order_by(func.count(InventoryEvent.id).desc())
+        .limit(top_n)
+        .all()
+    )
+
+    if not consumption_rows:
+        total_users = (
+            db.query(func.count(func.distinct(InventoryEvent.user_id)))
+            .filter(InventoryEvent.event_type == "consumed")
+            .scalar() or 0
+        )
+        return MarketProductTrendsResponse(
+            generated_at=datetime.utcnow(),
+            total_users_analyzed=total_users,
+            top_n=top_n,
+            products=[],
+            categories=[],
+        )
+
+    top_product_names = [r.product_name for r in consumption_rows]
+
+    # Step 2: repurchase – users who registered the same product name ≥ 2 times
+    purchase_counts = (
+        db.query(
+            func.lower(InventoryItem.name).label("product_name"),
+            InventoryItem.user_id.label("user_id"),
+            func.count(InventoryItem.id).label("times_bought"),
+        )
+        .filter(func.lower(InventoryItem.name).in_(top_product_names))
+        .group_by(func.lower(InventoryItem.name), InventoryItem.user_id)
+        .all()
+    )
+
+    buyers_by_product: dict[str, set] = defaultdict(set)
+    repurchasers_by_product: dict[str, set] = defaultdict(set)
+    for row in purchase_counts:
+        buyers_by_product[row.product_name].add(row.user_id)
+        if row.times_bought >= 2:
+            repurchasers_by_product[row.product_name].add(row.user_id)
+
+    # Step 3: build product result list
+    products: list[ProductTrendItem] = []
+    top_product_per_cat: dict[str, str] = {}
+
+    for r in consumption_rows:
+        pname = r.product_name
+        buyers = len(buyers_by_product[pname]) or 1
+        repurchasers = len(repurchasers_by_product[pname])
+        avg = round(r.consumption_count / r.unique_users, 2) if r.unique_users > 0 else 0.0
+
+        products.append(ProductTrendItem(
+            product_name=pname.title(),
+            category=r.category,
+            consumption_count=r.consumption_count,
+            unique_users=r.unique_users,
+            repurchase_rate=round(repurchasers / buyers, 2),
+            avg_consumption_per_user=avg,
+        ))
+
+        if r.category and r.category not in top_product_per_cat:
+            top_product_per_cat[r.category] = pname.title()
+
+    # Step 4: category-level rollup (all categories, not just top_n products)
+    cat_filter = (
+        db.query(
+            InventoryItem.category.label("category"),
+            func.count(InventoryEvent.id).label("total_consumption"),
+            func.count(func.distinct(InventoryEvent.user_id)).label("unique_users"),
+        )
+        .join(InventoryItem, InventoryEvent.item_id == InventoryItem.id)
+        .filter(
+            InventoryEvent.event_type == "consumed",
+            InventoryItem.category.isnot(None),
+        )
+        .group_by(InventoryItem.category)
+        .order_by(func.count(InventoryEvent.id).desc())
+        .all()
+    )
+
+    # enrich top_product_per_cat with products outside the top_n window
+    if len(top_product_per_cat) < len(cat_filter):
+        extra_rows = (
+            db.query(
+                func.lower(InventoryItem.name).label("product_name"),
+                InventoryItem.category.label("category"),
+                func.count(InventoryEvent.id).label("cnt"),
+            )
+            .join(InventoryItem, InventoryEvent.item_id == InventoryItem.id)
+            .filter(InventoryEvent.event_type == "consumed", InventoryItem.category.isnot(None))
+            .group_by(func.lower(InventoryItem.name), InventoryItem.category)
+            .order_by(func.count(InventoryEvent.id).desc())
+            .all()
+        )
+        for er in extra_rows:
+            if er.category and er.category not in top_product_per_cat:
+                top_product_per_cat[er.category] = er.product_name.title()
+
+    categories: list[CategoryTrendItem] = [
+        CategoryTrendItem(
+            category=cr.category,
+            total_consumption=cr.total_consumption,
+            unique_users=cr.unique_users,
+            top_product=top_product_per_cat.get(cr.category),
+        )
+        for cr in cat_filter
+    ]
+
+    total_users = (
+        db.query(func.count(func.distinct(InventoryEvent.user_id)))
+        .filter(InventoryEvent.event_type == "consumed")
+        .scalar() or 0
+    )
+
+    return MarketProductTrendsResponse(
+        generated_at=datetime.utcnow(),
+        total_users_analyzed=total_users,
+        top_n=top_n,
+        products=products,
+        categories=categories,
+    )
+
+
+def seed_demo_market_data(db: Session) -> SeedDemoResponse:
+    """Crea 6 usuarios sintéticos con inventario y eventos de consumo para T4.2."""
+    from app.auth.service import hash_password as _hash
+
+    existing_count = (
+        db.query(func.count(User.id))
+        .filter(User.email.like("%@secondserving.demo"))
+        .scalar() or 0
+    )
+    if existing_count >= len(_DEMO_USERS):
+        return SeedDemoResponse(
+            status="already_seeded",
+            users_created=0,
+            items_created=0,
+            events_created=0,
+        )
+
+    import random as _rng_mod
+    rng = _rng_mod.Random(42)
+    today = datetime.utcnow().date()
+    demo_pw_hash = _hash("Demo@SecondServing2026")
+
+    created_users = 0
+    created_items = 0
+    created_events = 0
+
+    for user_data, purchase_list in zip(_DEMO_USERS, _USER_PURCHASES):
+        user = db.query(User).filter(User.email == user_data["email"]).first()
+        if not user:
+            user = User(
+                email=user_data["email"],
+                full_name=user_data["full_name"],
+                password_hash=demo_pw_hash,
+                location=user_data.get("location"),
+            )
+            db.add(user)
+            db.flush()
+            created_users += 1
+
+        for product_name, times in purchase_list:
+            cat, unit, price_cop = _CATALOG[product_name]
+
+            for t in range(times):
+                # Spread purchases across the last 90 days; earlier purchases have higher t
+                days_ago = rng.randint(10 + t * 8, 85 - t * 8)
+                purchase_d: date = today - timedelta(days=days_ago)
+                expiry_d: date = purchase_d + timedelta(days=rng.randint(7, 21))
+                consumed_d: date = purchase_d + timedelta(
+                    days=rng.randint(1, min(5, (expiry_d - purchase_d).days - 1))
+                )
+
+                item = InventoryItem(
+                    user_id=user.id,
+                    name=product_name,
+                    category=cat,
+                    quantity=Decimal("1"),
+                    unit=unit,
+                    unit_price=Decimal(str(price_cop)),
+                    purchase_date=purchase_d,
+                    expiry_date=expiry_d,
+                    status="consumed",
+                )
+                db.add(item)
+                db.flush()
+                created_items += 1
+
+                db.add(InventoryEvent(
+                    user_id=user.id,
+                    item_id=item.id,
+                    event_type="registered",
+                    quantity=Decimal("1"),
+                    unit_price=Decimal(str(price_cop)),
+                    occurred_at=datetime(purchase_d.year, purchase_d.month, purchase_d.day),
+                ))
+                db.add(InventoryEvent(
+                    user_id=user.id,
+                    item_id=item.id,
+                    event_type="consumed",
+                    quantity=Decimal("1"),
+                    unit_price=Decimal(str(price_cop)),
+                    occurred_at=datetime(consumed_d.year, consumed_d.month, consumed_d.day),
+                ))
+                created_events += 2
+
+    db.commit()
+    return SeedDemoResponse(
+        status="seeded",
+        users_created=created_users,
+        items_created=created_items,
+        events_created=created_events,
     )
