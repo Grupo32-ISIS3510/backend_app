@@ -72,3 +72,36 @@ class DashboardResponse(BaseModel):
     waste_trends: list[WasteTrendItem]
     waste_summary: WasteSummaryResponse
     segment: UserSegmentResponse
+
+
+# ── T4.2: Market / demand insights (cross-user, anonymized) ──────────────────
+
+class ProductTrendItem(BaseModel):
+    product_name: str
+    category: Optional[str]
+    consumption_count: int
+    unique_users: int
+    repurchase_rate: float
+    avg_consumption_per_user: float
+
+
+class CategoryTrendItem(BaseModel):
+    category: str
+    total_consumption: int
+    unique_users: int
+    top_product: Optional[str]
+
+
+class MarketProductTrendsResponse(BaseModel):
+    generated_at: datetime
+    total_users_analyzed: int
+    top_n: int
+    products: list[ProductTrendItem]
+    categories: list[CategoryTrendItem]
+
+
+class SeedDemoResponse(BaseModel):
+    status: str
+    users_created: int
+    items_created: int
+    events_created: int
