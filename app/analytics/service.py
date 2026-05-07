@@ -290,3 +290,456 @@ def get_dashboard(
         waste_summary=get_waste_summary(db, user_id),
         segment=get_user_segment(db, user_id),
     )
+
+
+# ── T4.2 ─────────────────────────────────────────────────────────────────────
+
+def get_top_products(
+    db: Session,
+    top_n: int = 10,
+    category: Optional[str] = None,
+    min_users: int = 1,
+) -> MarketProductTrendsResponse:
+    """T4.2 – Productos con mayor frecuencia de consumo y tasa de recompra (cross-user)."""
+
+    # Step 1: consumption counts aggregated across ALL users
+    q = (
+        db.query(
+            func.lower(InventoryItem.name).label("product_name"),
+            InventoryItem.category.label("category"),
+            func.count(InventoryEvent.id).label("consumption_count"),
+            func.count(func.distinct(InventoryEvent.user_id)).label("unique_users"),
+        )
+        .join(InventoryItem, InventoryEvent.item_id == InventoryItem.id)
+        .filter(InventoryEvent.event_type == "consumed")
+    )
+
+    if category:
+        q = q.filter(func.lower(InventoryItem.category) == category.lower())
+
+    consumption_rows = (
+        q.group_by(func.lower(InventoryItem.name), InventoryItem.category)
+        .having(func.count(func.distinct(InventoryEvent.user_id)) >= min_users)
+        .order_by(func.count(InventoryEvent.id).desc())
+        .limit(top_n)
+        .all()
+    )
+
+    if not consumption_rows:
+        total_users = (
+            db.query(func.count(func.distinct(InventoryEvent.user_id)))
+            .filter(InventoryEvent.event_type == "consumed")
+            .scalar() or 0
+        )
+        return MarketProductTrendsResponse(
+            generated_at=datetime.utcnow(),
+            total_users_analyzed=total_users,
+            top_n=top_n,
+            products=[],
+            categories=[],
+        )
+
+    top_product_names = [r.product_name for r in consumption_rows]
+
+    # Step 2: repurchase – users who registered the same product name ≥ 2 times
+    purchase_counts = (
+        db.query(
+            func.lower(InventoryItem.name).label("product_name"),
+            InventoryItem.user_id.label("user_id"),
+            func.count(InventoryItem.id).label("times_bought"),
+        )
+        .filter(func.lower(InventoryItem.name).in_(top_product_names))
+        .group_by(func.lower(InventoryItem.name), InventoryItem.user_id)
+        .all()
+    )
+
+    buyers_by_product: dict[str, set] = defaultdict(set)
+    repurchasers_by_product: dict[str, set] = defaultdict(set)
+    for row in purchase_counts:
+        buyers_by_product[row.product_name].add(row.user_id)
+        if row.times_bought >= 2:
+            repurchasers_by_product[row.product_name].add(row.user_id)
+
+    # Step 3: build product result list
+    products: list[ProductTrendItem] = []
+    top_product_per_cat: dict[str, str] = {}
+
+    for r in consumption_rows:
+        pname = r.product_name
+        buyers = len(buyers_by_product[pname]) or 1
+        repurchasers = len(repurchasers_by_product[pname])
+        avg = round(r.consumption_count / r.unique_users, 2) if r.unique_users > 0 else 0.0
+
+        products.append(ProductTrendItem(
+            product_name=pname.title(),
+            category=r.category,
+            consumption_count=r.consumption_count,
+            unique_users=r.unique_users,
+            repurchase_rate=round(repurchasers / buyers, 2),
+            avg_consumption_per_user=avg,
+        ))
+
+        if r.category and r.category not in top_product_per_cat:
+            top_product_per_cat[r.category] = pname.title()
+
+    # Step 4: category-level rollup (all categories, not just top_n products)
+    cat_filter = (
+        db.query(
+            InventoryItem.category.label("category"),
+            func.count(InventoryEvent.id).label("total_consumption"),
+            func.count(func.distinct(InventoryEvent.user_id)).label("unique_users"),
+        )
+        .join(InventoryItem, InventoryEvent.item_id == InventoryItem.id)
+        .filter(
+            InventoryEvent.event_type == "consumed",
+            InventoryItem.category.isnot(None),
+        )
+        .group_by(InventoryItem.category)
+        .order_by(func.count(InventoryEvent.id).desc())
+        .all()
+    )
+
+    # enrich top_product_per_cat with products outside the top_n window
+    if len(top_product_per_cat) < len(cat_filter):
+        extra_rows = (
+            db.query(
+                func.lower(InventoryItem.name).label("product_name"),
+                InventoryItem.category.label("category"),
+                func.count(InventoryEvent.id).label("cnt"),
+            )
+            .join(InventoryItem, InventoryEvent.item_id == InventoryItem.id)
+            .filter(InventoryEvent.event_type == "consumed", InventoryItem.category.isnot(None))
+            .group_by(func.lower(InventoryItem.name), InventoryItem.category)
+            .order_by(func.count(InventoryEvent.id).desc())
+            .all()
+        )
+        for er in extra_rows:
+            if er.category and er.category not in top_product_per_cat:
+                top_product_per_cat[er.category] = er.product_name.title()
+
+    categories: list[CategoryTrendItem] = [
+        CategoryTrendItem(
+            category=cr.category,
+            total_consumption=cr.total_consumption,
+            unique_users=cr.unique_users,
+            top_product=top_product_per_cat.get(cr.category),
+        )
+        for cr in cat_filter
+    ]
+
+    total_users = (
+        db.query(func.count(func.distinct(InventoryEvent.user_id)))
+        .filter(InventoryEvent.event_type == "consumed")
+        .scalar() or 0
+    )
+
+    return MarketProductTrendsResponse(
+        generated_at=datetime.utcnow(),
+        total_users_analyzed=total_users,
+        top_n=top_n,
+        products=products,
+        categories=categories,
+    )
+
+
+def seed_demo_market_data(db: Session) -> SeedDemoResponse:
+    """Crea 6 usuarios sintéticos con inventario y eventos de consumo para T4.2."""
+    from app.auth.service import hash_password as _hash
+
+    existing_count = (
+        db.query(func.count(User.id))
+        .filter(User.email.like("%@secondserving.demo"))
+        .scalar() or 0
+    )
+    if existing_count >= len(_DEMO_USERS):
+        return SeedDemoResponse(
+            status="already_seeded",
+            users_created=0,
+            items_created=0,
+            events_created=0,
+        )
+
+    import random as _rng_mod
+    rng = _rng_mod.Random(42)
+    today = datetime.utcnow().date()
+    demo_pw_hash = _hash("Demo@SecondServing2026")
+
+    created_users = 0
+    created_items = 0
+    created_events = 0
+
+    for user_data, purchase_list in zip(_DEMO_USERS, _USER_PURCHASES):
+        user = db.query(User).filter(User.email == user_data["email"]).first()
+        if not user:
+            user = User(
+                email=user_data["email"],
+                full_name=user_data["full_name"],
+                password_hash=demo_pw_hash,
+                location=user_data.get("location"),
+            )
+            db.add(user)
+            db.flush()
+            created_users += 1
+
+        for product_name, times in purchase_list:
+            cat, unit, price_cop = _CATALOG[product_name]
+
+            for t in range(times):
+                # Spread purchases across the last 90 days; earlier purchases have higher t
+                days_ago = rng.randint(10 + t * 8, 85 - t * 8)
+                purchase_d: date = today - timedelta(days=days_ago)
+                expiry_d: date = purchase_d + timedelta(days=rng.randint(7, 21))
+                consumed_d: date = purchase_d + timedelta(
+                    days=rng.randint(1, min(5, (expiry_d - purchase_d).days - 1))
+                )
+
+                item = InventoryItem(
+                    user_id=user.id,
+                    name=product_name,
+                    category=cat,
+                    quantity=Decimal("1"),
+                    unit=unit,
+                    unit_price=Decimal(str(price_cop)),
+                    purchase_date=purchase_d,
+                    expiry_date=expiry_d,
+                    status="consumed",
+                )
+                db.add(item)
+                db.flush()
+                created_items += 1
+
+                db.add(InventoryEvent(
+                    user_id=user.id,
+                    item_id=item.id,
+                    event_type="registered",
+                    quantity=Decimal("1"),
+                    unit_price=Decimal(str(price_cop)),
+                    occurred_at=datetime(purchase_d.year, purchase_d.month, purchase_d.day),
+                ))
+                db.add(InventoryEvent(
+                    user_id=user.id,
+                    item_id=item.id,
+                    event_type="consumed",
+                    quantity=Decimal("1"),
+                    unit_price=Decimal(str(price_cop)),
+                    occurred_at=datetime(consumed_d.year, consumed_d.month, consumed_d.day),
+                ))
+                created_events += 2
+
+    db.commit()
+    return SeedDemoResponse(
+        status="seeded",
+        users_created=created_users,
+        items_created=created_items,
+        events_created=created_events,
+    )
+
+
+# ── T1.1: Notification latency ────────────────────────────────────────────────
+
+def get_notification_latency(db: Session, days: int = 30) -> dict:
+    stats_sql = text("""
+        WITH first_notification AS (
+            SELECT (properties->>'item_id')::uuid AS item_id,
+                   MIN(occurred_at)               AS first_notif_at
+            FROM analytics_events
+            WHERE event_name = 'notification_received'
+              AND (properties->>'item_id') IS NOT NULL
+            GROUP BY properties->>'item_id'
+        ),
+        latencies AS (
+            SELECT EXTRACT(EPOCH FROM (fn.first_notif_at - r.occurred_at)) AS seconds
+            FROM inventory_events r
+            JOIN first_notification fn ON fn.item_id = r.item_id
+            WHERE r.event_type = 'registered'
+              AND r.occurred_at > NOW() - (:days::int * INTERVAL '1 day')
+              AND fn.first_notif_at > r.occurred_at
+        )
+        SELECT
+            COUNT(*)                                                            AS sample_size,
+            COALESCE(AVG(seconds), 0)                                           AS avg_seconds,
+            COALESCE(PERCENTILE_CONT(0.5)  WITHIN GROUP (ORDER BY seconds), 0) AS p50_seconds,
+            COALESCE(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY seconds), 0) AS p95_seconds,
+            COALESCE(MAX(seconds), 0)                                           AS max_seconds
+        FROM latencies;
+    """)
+    stats = db.execute(stats_sql, {"days": days}).mappings().one()
+
+    histogram_sql = text("""
+        WITH first_notification AS (
+            SELECT (properties->>'item_id')::uuid AS item_id,
+                   MIN(occurred_at)               AS first_notif_at
+            FROM analytics_events
+            WHERE event_name = 'notification_received'
+              AND (properties->>'item_id') IS NOT NULL
+            GROUP BY properties->>'item_id'
+        ),
+        latencies AS (
+            SELECT EXTRACT(EPOCH FROM (fn.first_notif_at - r.occurred_at))/60.0 AS minutes
+            FROM inventory_events r
+            JOIN first_notification fn ON fn.item_id = r.item_id
+            WHERE r.event_type = 'registered'
+              AND r.occurred_at > NOW() - (:days::int * INTERVAL '1 day')
+              AND fn.first_notif_at > r.occurred_at
+        ),
+        buckets AS (
+            SELECT
+                CASE
+                    WHEN minutes < 1   THEN '0-1 min'
+                    WHEN minutes < 5   THEN '1-5 min'
+                    WHEN minutes < 30  THEN '5-30 min'
+                    WHEN minutes < 60  THEN '30-60 min'
+                    ELSE                    '>60 min'
+                END AS bucket,
+                CASE
+                    WHEN minutes < 1   THEN 1
+                    WHEN minutes < 5   THEN 2
+                    WHEN minutes < 30  THEN 3
+                    WHEN minutes < 60  THEN 4
+                    ELSE                    5
+                END AS sort_order
+            FROM latencies
+        )
+        SELECT bucket, sort_order, COUNT(*) AS count
+        FROM buckets
+        GROUP BY bucket, sort_order
+        ORDER BY sort_order;
+    """)
+    rows = db.execute(histogram_sql, {"days": days}).mappings().all()
+
+    return {
+        "avg_seconds": float(stats["avg_seconds"]),
+        "p50_seconds": float(stats["p50_seconds"]),
+        "p95_seconds": float(stats["p95_seconds"]),
+        "max_seconds": float(stats["max_seconds"]),
+        "sample_size": int(stats["sample_size"]),
+        "histogram": [{"bucket": r["bucket"], "count": int(r["count"])} for r in rows],
+        "period_days": days,
+    }
+
+
+def get_inventory_events_summary(db: Session, days: int = 30) -> dict:
+    sql = text("""
+        SELECT
+            COUNT(*) FILTER (WHERE r.event_type = 'registered') AS total_registered,
+            COUNT(*) FILTER (
+                WHERE r.event_type = 'registered'
+                  AND (i.expiry_date - r.occurred_at::date) <= 3
+            ) AS eligible_for_alert
+        FROM inventory_events r
+        LEFT JOIN inventory_items i ON i.id = r.item_id
+        WHERE r.occurred_at > NOW() - (:days || ' days')::interval;
+    """)
+    row = db.execute(sql, {"days": days}).mappings().one()
+    return {
+        "total_registered": int(row["total_registered"] or 0),
+        "eligible_for_alert": int(row["eligible_for_alert"] or 0),
+        "period_days": days,
+    }
+
+
+# ── T2.3: Recipe interactions ─────────────────────────────────────────────────
+
+def get_recipe_interactions_summary(db: Session, days: int = 30) -> dict:
+    sql = text("""
+        SELECT
+            SUM(CASE WHEN action='cooked' THEN 1 ELSE 0 END) AS total_cooked,
+            SUM(CASE WHEN action='viewed' THEN 1 ELSE 0 END) AS total_viewed,
+            ROUND(
+                100.0 * SUM(CASE WHEN action='cooked' THEN 1 ELSE 0 END)::numeric
+                      / NULLIF(SUM(CASE WHEN action='viewed' THEN 1 ELSE 0 END), 0),
+                1
+            ) AS cook_through_rate,
+            ROUND(AVG(CASE WHEN action='cooked' THEN inventory_matches END)::numeric, 1)
+                AS avg_inventory_matches_on_cook
+        FROM recipe_interactions
+        WHERE occurred_at > NOW() - (:days || ' days')::interval;
+    """)
+    row = db.execute(sql, {"days": days}).mappings().one()
+    return {
+        "total_cooked": int(row["total_cooked"] or 0),
+        "total_viewed": int(row["total_viewed"] or 0),
+        "cook_through_rate": float(row["cook_through_rate"] or 0),
+        "avg_inventory_matches_on_cook": (
+            float(row["avg_inventory_matches_on_cook"])
+            if row["avg_inventory_matches_on_cook"] is not None else None
+        ),
+        "period_days": days,
+    }
+
+
+def get_top_cooked_recipes(db: Session, days: int = 30, limit: int = 10) -> list[dict]:
+    sql = text("""
+        SELECT r.name, COUNT(*) AS cooks
+        FROM recipe_interactions ri
+        JOIN recipes r ON r.id = ri.recipe_id
+        WHERE ri.action = 'cooked'
+          AND ri.occurred_at > NOW() - (:days || ' days')::interval
+        GROUP BY r.name
+        ORDER BY cooks DESC
+        LIMIT :limit;
+    """)
+    rows = db.execute(sql, {"days": days, "limit": limit}).mappings().all()
+    return [{"name": r["name"], "cooks": int(r["cooks"])} for r in rows]
+
+
+def get_views_vs_cooks(db: Session, days: int = 30, limit: int = 10) -> list[dict]:
+    sql = text("""
+        SELECT
+            r.name,
+            SUM(CASE WHEN ri.action='viewed' THEN 1 ELSE 0 END) AS views,
+            SUM(CASE WHEN ri.action='cooked' THEN 1 ELSE 0 END) AS cooks,
+            ROUND(
+                100.0 * SUM(CASE WHEN ri.action='cooked' THEN 1 ELSE 0 END)::numeric
+                      / NULLIF(SUM(CASE WHEN ri.action='viewed' THEN 1 ELSE 0 END), 0),
+                1
+            ) AS rate_pct
+        FROM recipe_interactions ri
+        JOIN recipes r ON r.id = ri.recipe_id
+        WHERE ri.occurred_at > NOW() - (:days || ' days')::interval
+        GROUP BY r.name
+        ORDER BY cooks DESC, views DESC
+        LIMIT :limit;
+    """)
+    rows = db.execute(sql, {"days": days, "limit": limit}).mappings().all()
+    return [
+        {
+            "name": r["name"],
+            "views": int(r["views"] or 0),
+            "cooks": int(r["cooks"] or 0),
+            "rate_pct": float(r["rate_pct"]) if r["rate_pct"] is not None else None,
+        }
+        for r in rows
+    ]
+
+
+def get_match_distribution(db: Session, days: int = 30) -> list[dict]:
+    sql = text("""
+        WITH labeled AS (
+            SELECT
+                CASE
+                    WHEN inventory_matches = 1 THEN '1'
+                    WHEN inventory_matches = 2 THEN '2'
+                    WHEN inventory_matches = 3 THEN '3'
+                    WHEN inventory_matches = 4 THEN '4'
+                    WHEN inventory_matches >= 5 THEN '5+'
+                END AS matches,
+                CASE
+                    WHEN inventory_matches = 1 THEN 1
+                    WHEN inventory_matches = 2 THEN 2
+                    WHEN inventory_matches = 3 THEN 3
+                    WHEN inventory_matches = 4 THEN 4
+                    WHEN inventory_matches >= 5 THEN 5
+                END AS sort_order
+            FROM recipe_interactions
+            WHERE action = 'cooked'
+              AND inventory_matches IS NOT NULL
+              AND occurred_at > NOW() - (:days || ' days')::interval
+        )
+        SELECT matches, sort_order, COUNT(*) AS count
+        FROM labeled
+        GROUP BY matches, sort_order
+        ORDER BY sort_order;
+    """)
+    rows = db.execute(sql, {"days": days}).mappings().all()
+    return [{"matches": r["matches"], "count": int(r["count"])} for r in rows]
