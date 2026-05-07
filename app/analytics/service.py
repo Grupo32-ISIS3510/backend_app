@@ -616,7 +616,7 @@ def get_notification_latency(db: Session, days: int = 30) -> dict:
             FROM inventory_events r
             JOIN first_notification fn ON fn.item_id = r.item_id
             WHERE r.event_type = 'registered'
-              AND r.occurred_at > NOW() - (:days::int * INTERVAL '1 day')
+              AND r.occurred_at > NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
               AND fn.first_notif_at > r.occurred_at
         )
         SELECT
@@ -643,7 +643,7 @@ def get_notification_latency(db: Session, days: int = 30) -> dict:
             FROM inventory_events r
             JOIN first_notification fn ON fn.item_id = r.item_id
             WHERE r.event_type = 'registered'
-              AND r.occurred_at > NOW() - (:days::int * INTERVAL '1 day')
+              AND r.occurred_at > NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
               AND fn.first_notif_at > r.occurred_at
         ),
         buckets AS (
