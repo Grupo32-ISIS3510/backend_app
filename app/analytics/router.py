@@ -12,8 +12,16 @@ from app.analytics.schemas import (
     AnalyticsEventResponse,
     DashboardResponse,
     EventsSummaryResponse,
+    InventoryEventsSummaryResponse,
+    MarketProductTrendsResponse,
+    MatchBucket,
+    NotificationLatencyResponse,
+    RecipeInteractionsSummary,
     SavingsResponse,
+    SeedDemoResponse,
+    TopCookedRecipe,
     UserSegmentResponse,
+    ViewsVsCooksRow,
     WasteSummaryResponse,
     WasteTrendItem,
 )
@@ -95,3 +103,105 @@ def get_dashboard(
 ):
     """Todas las métricas en un solo request — optimizado para la pantalla de inicio."""
     return analytics_service.get_dashboard(db, current_user.id, month, year)
+
+
+# ── T4.2: Market / demand insights ───────────────────────────────────────────
+
+@router.post("/market/seed-demo", response_model=SeedDemoResponse, status_code=201)
+def seed_demo_market_data(db: Session = Depends(get_db)):
+    """
+    Pobla la base de datos con 6 usuarios sintéticos y sus patrones de compra/consumo.
+    Idempotente: si los usuarios demo ya existen, devuelve `already_seeded`.
+    No requiere autenticación (solo para entornos de demo/desarrollo).
+    """
+    return analytics_service.seed_demo_market_data(db)
+
+
+@router.get("/market/top-products", response_model=MarketProductTrendsResponse)
+def get_top_products(
+    top_n: int = Query(10, ge=1, le=50, description="Número de productos a retornar"),
+    category: str = Query(None, description="Filtrar por categoría (ej. 'Lácteos')"),
+    min_users: int = Query(1, ge=1, description="Mínimo de usuarios distintos que consumieron el producto"),
+    db: Session = Depends(get_db),
+):
+    """
+    T4.2 – Productos y categorías con mayor frecuencia de consumo y tasa de recompra.
+
+    Responde la pregunta de negocio: *¿qué productos o categorías muestran mayor frecuencia
+    de consumo y tasa de recompra entre usuarios?*
+
+    - **consumption_count**: total de veces consumido en toda la base de usuarios.
+    - **unique_users**: usuarios distintos que lo consumieron.
+    - **repurchase_rate**: fracción de esos usuarios que registraron el mismo producto ≥ 2 veces.
+    - **avg_consumption_per_user**: promedio de eventos de consumo por usuario.
+
+    Los datos son agregados y anónimos — no se expone ningún identificador de usuario.
+    Ejecutar primero `POST /market/seed-demo` si la BD está vacía.
+    """
+    return analytics_service.get_top_products(db, top_n=top_n, category=category, min_users=min_users)
+
+
+# ── T1.1: Notification latency & inventory events ────────────────────────────
+
+@router.get("/notification-latency", response_model=NotificationLatencyResponse)
+def notification_latency(
+    days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Latencia entre registro de ítem y primera notificación recibida."""
+    return analytics_service.get_notification_latency(db, days=days)
+
+
+@router.get("/inventory-events/summary", response_model=InventoryEventsSummaryResponse)
+def inventory_events_summary(
+    days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Total de ítems registrados y cuántos eran elegibles para alerta (≤3 días al vencer)."""
+    return analytics_service.get_inventory_events_summary(db, days=days)
+
+
+# ── T2.3: Recipe interactions ─────────────────────────────────────────────────
+
+@router.get("/recipe-interactions/summary", response_model=RecipeInteractionsSummary)
+def recipe_interactions_summary(
+    days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Resumen de interacciones: total cocinado/visto, cook-through rate y matches promedio."""
+    return analytics_service.get_recipe_interactions_summary(db, days=days)
+
+
+@router.get("/recipe-interactions/top-cooked", response_model=list[TopCookedRecipe])
+def top_cooked_recipes(
+    days: int = Query(30, ge=1, le=365),
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Ranking de recetas más cocinadas en los últimos N días."""
+    return analytics_service.get_top_cooked_recipes(db, days=days, limit=limit)
+
+
+@router.get("/recipe-interactions/views-vs-cooks", response_model=list[ViewsVsCooksRow])
+def views_vs_cooks(
+    days: int = Query(30, ge=1, le=365),
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Comparativo de vistas vs cocinadas por receta con cook-through rate individual."""
+    return analytics_service.get_views_vs_cooks(db, days=days, limit=limit)
+
+
+@router.get("/recipe-interactions/match-distribution", response_model=list[MatchBucket])
+def match_distribution(
+    days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Histograma de inventory_matches al momento de cocinar (1/2/3/4/5+)."""
+    return analytics_service.get_match_distribution(db, days=days)

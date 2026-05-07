@@ -72,3 +72,86 @@ class DashboardResponse(BaseModel):
     waste_trends: list[WasteTrendItem]
     waste_summary: WasteSummaryResponse
     segment: UserSegmentResponse
+
+
+# ── T4.2: Market / demand insights (cross-user, anonymized) ──────────────────
+
+class ProductTrendItem(BaseModel):
+    product_name: str
+    category: Optional[str]
+    consumption_count: int
+    unique_users: int
+    repurchase_rate: float
+    avg_consumption_per_user: float
+
+
+class CategoryTrendItem(BaseModel):
+    category: str
+    total_consumption: int
+    unique_users: int
+    top_product: Optional[str]
+
+
+class MarketProductTrendsResponse(BaseModel):
+    generated_at: datetime
+    total_users_analyzed: int
+    top_n: int
+    products: list[ProductTrendItem]
+    categories: list[CategoryTrendItem]
+
+
+class SeedDemoResponse(BaseModel):
+    status: str
+    users_created: int
+    items_created: int
+    events_created: int
+
+
+# ── T1.1: Notification latency & inventory events ────────────────────────────
+
+class LatencyBucket(BaseModel):
+    bucket: str
+    count: int
+
+
+class NotificationLatencyResponse(BaseModel):
+    avg_seconds: float
+    p50_seconds: float
+    p95_seconds: float
+    max_seconds: float
+    sample_size: int
+    histogram: list[LatencyBucket]
+    period_days: int
+
+
+class InventoryEventsSummaryResponse(BaseModel):
+    total_registered: int
+    eligible_for_alert: int
+    period_days: int
+
+
+# ── T2.3: Recipe interactions ─────────────────────────────────────────────────
+
+class RecipeInteractionsSummary(BaseModel):
+    total_cooked: int
+    total_viewed: int
+    cook_through_rate: float
+    avg_inventory_matches_on_cook: Optional[float]
+    period_days: int
+
+
+class TopCookedRecipe(BaseModel):
+    name: str
+    cooks: int
+
+
+class ViewsVsCooksRow(BaseModel):
+    name: str
+    views: int
+    cooks: int
+    rate_pct: Optional[float]
+
+
+class MatchBucket(BaseModel):
+    matches: str
+    count: int

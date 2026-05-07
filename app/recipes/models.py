@@ -40,10 +40,11 @@ class RecipeIngredient(Base):
 class RecipeInteraction(Base):
     __tablename__ = "recipe_interactions"
 
-    id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id     = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    recipe_id   = Column(UUID(as_uuid=True), ForeignKey("recipes.id"), nullable=False)
-    action      = Column(String(20), nullable=False)   # 'viewed', 'cooked'
-    occurred_at = Column(DateTime, default=datetime.utcnow)
+    id                = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id           = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    recipe_id         = Column(UUID(as_uuid=True), ForeignKey("recipes.id"), nullable=False)
+    action            = Column(String(20), nullable=False)   # 'viewed', 'cooked'
+    inventory_matches = Column(Integer, nullable=True)
+    occurred_at       = Column(DateTime, default=datetime.utcnow)
 
     recipe = relationship("Recipe", back_populates="interactions")
