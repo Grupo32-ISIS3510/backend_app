@@ -608,7 +608,7 @@ def get_notification_latency(db: Session, days: int = 30) -> dict:
                    MIN(occurred_at)               AS first_notif_at
             FROM analytics_events
             WHERE event_name = 'notification_received'
-              AND (properties->>'item_id') IS NOT NULL
+              AND (properties->>'item_id') ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
             GROUP BY properties->>'item_id'
         ),
         latencies AS (
@@ -635,7 +635,7 @@ def get_notification_latency(db: Session, days: int = 30) -> dict:
                    MIN(occurred_at)               AS first_notif_at
             FROM analytics_events
             WHERE event_name = 'notification_received'
-              AND (properties->>'item_id') IS NOT NULL
+              AND (properties->>'item_id') ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
             GROUP BY properties->>'item_id'
         ),
         latencies AS (
