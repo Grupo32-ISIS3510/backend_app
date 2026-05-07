@@ -611,12 +611,12 @@ def seed_demo_market_data(db: Session) -> SeedDemoResponse:
 def get_notification_latency(db: Session, days: int = 30) -> dict:
     stats_sql = text("""
         WITH first_notification AS (
-            SELECT (metadata->>'item_id')::uuid AS item_id,
-                   MIN(occurred_at)             AS first_notif_at
+            SELECT (properties->>'item_id')::uuid AS item_id,
+                   MIN(occurred_at)               AS first_notif_at
             FROM analytics_events
             WHERE event_name = 'notification_received'
-              AND metadata ? 'item_id'
-            GROUP BY metadata->>'item_id'
+              AND properties ? 'item_id'
+            GROUP BY properties->>'item_id'
         ),
         latencies AS (
             SELECT EXTRACT(EPOCH FROM (fn.first_notif_at - r.occurred_at)) AS seconds
@@ -638,12 +638,12 @@ def get_notification_latency(db: Session, days: int = 30) -> dict:
 
     histogram_sql = text("""
         WITH first_notification AS (
-            SELECT (metadata->>'item_id')::uuid AS item_id,
-                   MIN(occurred_at)             AS first_notif_at
+            SELECT (properties->>'item_id')::uuid AS item_id,
+                   MIN(occurred_at)               AS first_notif_at
             FROM analytics_events
             WHERE event_name = 'notification_received'
-              AND metadata ? 'item_id'
-            GROUP BY metadata->>'item_id'
+              AND properties ? 'item_id'
+            GROUP BY properties->>'item_id'
         ),
         latencies AS (
             SELECT EXTRACT(EPOCH FROM (fn.first_notif_at - r.occurred_at))/60.0 AS minutes
