@@ -777,6 +777,96 @@ def get_views_vs_cooks(db: Session, days: int = 30, limit: int = 10) -> list[dic
     ]
 
 
+# ── T3.4: Alert response times ────────────────────────────────────────────────
+
+def _percentile_cont(sorted_values: list[float], p: float) -> float:
+    """Linear-interpolated percentile equivalent to PostgreSQL PERCENTILE_CONT."""
+    if not sorted_values:
+        return 0.0
+    if len(sorted_values) == 1:
+        return float(sorted_values[0])
+    k = (len(sorted_values) - 1) * p
+    lo = int(k)
+    hi = min(lo + 1, len(sorted_values) - 1)
+    if lo == hi:
+        return float(sorted_values[lo])
+    return float(sorted_values[lo] + (sorted_values[hi] - sorted_values[lo]) * (k - lo))
+
+
+def get_alert_response_times(
+    db: Session, user_id: uuid.UUID, days: int = 30
+) -> dict:
+    """Tiempo (en horas) entre una notificación de alerta y la primera acción del usuario
+    sobre el ítem referenciado (consumed/discarded). Solo cuenta deltas positivos.
+
+    Si la muestra es menor a 5, devuelve ceros con histograma vacío
+    (datos insuficientes — no se considera error).
+    """
+    deltas_sql = text("""
+        SELECT
+            EXTRACT(EPOCH FROM (next_action.first_action_at - notif.occurred_at)) / 3600.0
+                AS hours
+        FROM analytics_events notif
+        CROSS JOIN LATERAL (
+            SELECT MIN(occurred_at) AS first_action_at
+            FROM inventory_events
+            WHERE user_id = :user_id
+              AND item_id = (notif.properties->>'item_id')::uuid
+              AND event_type IN ('consumed', 'discarded')
+              AND occurred_at > notif.occurred_at
+        ) next_action
+        WHERE notif.user_id = :user_id
+          AND notif.event_name IN ('notification_received', 'notification_opened')
+          AND notif.occurred_at > NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
+          AND notif.properties ? 'item_id'
+          AND (notif.properties->>'item_id')
+              ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          AND next_action.first_action_at IS NOT NULL
+          AND next_action.first_action_at > notif.occurred_at;
+    """)
+
+    rows = db.execute(deltas_sql, {"user_id": str(user_id), "days": days}).all()
+    deltas = sorted(float(r[0]) for r in rows if r[0] is not None and float(r[0]) > 0)
+    sample_size = len(deltas)
+
+    if sample_size < 5:
+        return {
+            "avg_hours": 0.0,
+            "p50_hours": 0.0,
+            "p95_hours": 0.0,
+            "max_hours": 0.0,
+            "sample_size": sample_size,
+            "period_days": days,
+            "histogram": [],
+        }
+
+    avg_hours = sum(deltas) / sample_size
+    p50_hours = _percentile_cont(deltas, 0.50)
+    p95_hours = _percentile_cont(deltas, 0.95)
+    max_hours = deltas[-1]
+
+    buckets = [
+        ("< 1h",   lambda d: d < 1),
+        ("1\u20136h",  lambda d: 1 <= d < 6),
+        ("6\u201324h", lambda d: 6 <= d < 24),
+        ("> 24h",  lambda d: d >= 24),
+    ]
+    histogram = [
+        {"bucket": label, "count": sum(1 for d in deltas if pred(d))}
+        for label, pred in buckets
+    ]
+
+    return {
+        "avg_hours": round(avg_hours, 2),
+        "p50_hours": round(p50_hours, 2),
+        "p95_hours": round(p95_hours, 2),
+        "max_hours": round(max_hours, 2),
+        "sample_size": sample_size,
+        "period_days": days,
+        "histogram": histogram,
+    }
+
+
 def get_match_distribution(db: Session, days: int = 30) -> list[dict]:
     sql = text("""
         WITH labeled AS (
