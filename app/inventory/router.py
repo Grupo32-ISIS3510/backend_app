@@ -6,7 +6,14 @@ from app.database import get_db
 from app.common.dependencies import get_current_user
 from app.auth.models import User
 from app.inventory import service as inventory_service
-from app.inventory.schemas import ItemCreate, ItemUpdate, ItemDiscard, ItemResponse, ItemListResponse
+from app.inventory.schemas import (
+    ItemCreate,
+    ItemUpdate,
+    ItemDiscard,
+    ItemResponse,
+    ItemListResponse,
+    BulkItemsCreate,
+)
 
 router = APIRouter(prefix="/api/v1/inventory", tags=["Inventario"])
 
@@ -38,6 +45,15 @@ def create_item(
     current_user: User = Depends(get_current_user)
 ):
     return inventory_service.create_item(db, current_user.id, data)
+
+
+@router.post("/bulk", response_model=list[ItemResponse], status_code=201)
+def bulk_create_items(
+    data: BulkItemsCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return inventory_service.bulk_create_items(db, current_user.id, data)
 
 
 @router.put("/{item_id}", response_model=ItemResponse)

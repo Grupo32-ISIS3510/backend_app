@@ -8,9 +8,11 @@ from app.database import Base
 from app.auth.models import User
 from app.analytics.models import AnalyticsEvent
 from app.inventory.models import InventoryItem, InventoryEvent
-from app.notifications.models import DeviceToken, NotificationPreference
+from app.notifications.models import DeviceToken, NotificationPreference, NotificationDispatch
 from app.recipes.models import Recipe, RecipeIngredient, RecipeInteraction
 from app.sync.models import SyncLog
+from app.telemetry.models import ScanEvent, ExpiryAccuracyEvent, ScreenEvent
+from app.analytics.models import AnalyticsEvent
 
 config = context.config
 settings = get_settings()

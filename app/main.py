@@ -11,6 +11,7 @@ from app.notifications.router import router as notifications_router
 from app.recipes.router import router as recipes_router
 from app.analytics.router import router as analytics_router
 from app.sync.router import router as sync_router
+from app.telemetry.router import router as telemetry_router
 from app.common.exceptions import AppException
 from app.common.error_handlers import (
     app_exception_handler,
@@ -42,6 +43,7 @@ app.include_router(notifications_router)
 app.include_router(recipes_router)
 app.include_router(analytics_router)
 app.include_router(sync_router)
+app.include_router(telemetry_router)
 
 
 # ── Scheduler (notificaciones de vencimiento) ────────────────────────────────
@@ -58,7 +60,11 @@ def scheduled_expiry_check():
 
 # Iniciar el scheduler cuando arranca el servidor
 scheduler = BackgroundScheduler()
-scheduler.add_job(scheduled_expiry_check, "interval", hours=1)
+scheduler.add_job(
+    scheduled_expiry_check,
+    "interval",
+    hours=max(1, settings.notifications_scheduler_hours),
+)
 scheduler.start()
 
 

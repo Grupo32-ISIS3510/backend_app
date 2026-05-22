@@ -113,3 +113,15 @@ class ItemResponse(BaseModel):
 class ItemListResponse(BaseModel):
     items: list[ItemResponse]
     total: int
+
+
+class BulkItemsCreate(BaseModel):
+    """Schema para crear múltiples items de un escaneo OCR."""
+    items: list[ItemCreate]
+
+    @field_validator("items")
+    @classmethod
+    def at_least_one(cls, v: list[ItemCreate]) -> list[ItemCreate]:
+        if not v:
+            raise ValueError("Debes proporcionar al menos un item.")
+        return v

@@ -8,10 +8,13 @@ from app.common.dependencies import get_current_user
 from app.auth.models import User
 from app.analytics import service as analytics_service
 from app.analytics.schemas import (
-    AnalyticsEventBatchRequest,
-    AnalyticsEventBatchResponse,
+    AnalyticsEventBatch,
+    AnalyticsEventResponse,
     DashboardResponse,
+    EventsSummaryResponse,
+    MarketProductTrendsResponse,
     SavingsResponse,
+    SeedDemoResponse,
     UserSegmentResponse,
     WasteSummaryResponse,
     WasteTrendItem,
@@ -22,25 +25,29 @@ router = APIRouter(prefix="/api/v1/analytics", tags=["Analytics"])
 _now = datetime.utcnow()
 
 
-@router.post("/events", response_model=AnalyticsEventBatchResponse, status_code=status.HTTP_201_CREATED)
-def store_events(
-    data: AnalyticsEventBatchRequest,
+# ── Pipeline: Capture ────────────────────────────────────────────────────────
+
+@router.post("/events", response_model=AnalyticsEventResponse, status_code=201)
+def ingest_events(
+    batch: AnalyticsEventBatch,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Almacena un batch de eventos de analytics enviados desde el frontend.
-    Los eventos se usan para análisis de comportamiento y mejoras de la app.
-    """
-    stored_count = analytics_service.store_analytics_events(db, current_user.id, data.events)
-    
-    return AnalyticsEventBatchResponse(
-        status="success",
-        events_received=stored_count,
-        message=f"{stored_count} eventos almacenados exitosamente."
-    )
+    """Recibe un batch de eventos analytics desde el cliente móvil (max 100 por request)."""
+    return analytics_service.record_events(db, current_user.id, batch)
 
 
+@router.get("/events/summary", response_model=EventsSummaryResponse)
+def get_events_summary(
+    days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Resumen de eventos analytics agrupados por tipo en los últimos N días."""
+    return analytics_service.get_events_summary(db, current_user.id, days)
+
+
+# ── Pipeline: Consume ────────────────────────────────────────────────────────
 @router.get("/savings", response_model=SavingsResponse)
 def get_savings(
     month: int = Query(_now.month, ge=1, le=12),
@@ -89,3 +96,39 @@ def get_dashboard(
 ):
     """Todas las métricas en un solo request — optimizado para la pantalla de inicio."""
     return analytics_service.get_dashboard(db, current_user.id, month, year)
+
+
+# ── T4.2: Market / demand insights ───────────────────────────────────────────
+
+@router.post("/market/seed-demo", response_model=SeedDemoResponse, status_code=201)
+def seed_demo_market_data(db: Session = Depends(get_db)):
+    """
+    Pobla la base de datos con 6 usuarios sintéticos y sus patrones de compra/consumo.
+    Idempotente: si los usuarios demo ya existen, devuelve `already_seeded`.
+    No requiere autenticación (solo para entornos de demo/desarrollo).
+    """
+    return analytics_service.seed_demo_market_data(db)
+
+
+@router.get("/market/top-products", response_model=MarketProductTrendsResponse)
+def get_top_products(
+    top_n: int = Query(10, ge=1, le=50, description="Número de productos a retornar"),
+    category: str = Query(None, description="Filtrar por categoría (ej. 'Lácteos')"),
+    min_users: int = Query(1, ge=1, description="Mínimo de usuarios distintos que consumieron el producto"),
+    db: Session = Depends(get_db),
+):
+    """
+    T4.2 – Productos y categorías con mayor frecuencia de consumo y tasa de recompra.
+
+    Responde la pregunta de negocio: *¿qué productos o categorías muestran mayor frecuencia
+    de consumo y tasa de recompra entre usuarios?*
+
+    - **consumption_count**: total de veces consumido en toda la base de usuarios.
+    - **unique_users**: usuarios distintos que lo consumieron.
+    - **repurchase_rate**: fracción de esos usuarios que registraron el mismo producto ≥ 2 veces.
+    - **avg_consumption_per_user**: promedio de eventos de consumo por usuario.
+
+    Los datos son agregados y anónimos — no se expone ningún identificador de usuario.
+    Ejecutar primero `POST /market/seed-demo` si la BD está vacía.
+    """
+    return analytics_service.get_top_products(db, top_n=top_n, category=category, min_users=min_users)
