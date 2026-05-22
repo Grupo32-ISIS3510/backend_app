@@ -10,7 +10,7 @@ from app.inventory.models import InventoryItem, InventoryEvent
 from app.notifications.models import DeviceToken, NotificationPreference, NotificationDispatch
 from app.recipes.models import Recipe, RecipeIngredient, RecipeInteraction
 from app.sync.models import SyncLog
-from app.telemetry.models import ScanEvent, ExpiryAccuracyEvent, ScreenEvent
+from app.telemetry.models import ScanEvent, ExpiryAccuracyEvent, ScreenEvent, FeatureUsageEvent
 from app.analytics.models import AnalyticsEvent
 from app.shopping_list.models import ShoppingItem
 
