@@ -12,6 +12,7 @@ from app.recipes.router import router as recipes_router
 from app.analytics.router import router as analytics_router
 from app.sync.router import router as sync_router
 from app.telemetry.router import router as telemetry_router
+from app.shopping_list.router import router as shopping_list_router
 from app.common.exceptions import AppException
 from app.common.error_handlers import (
     app_exception_handler,
@@ -44,6 +45,7 @@ app.include_router(recipes_router)
 app.include_router(analytics_router)
 app.include_router(sync_router)
 app.include_router(telemetry_router)
+app.include_router(shopping_list_router)
 
 
 # ── Scheduler (notificaciones de vencimiento) ────────────────────────────────

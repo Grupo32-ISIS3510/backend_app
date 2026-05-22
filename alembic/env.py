@@ -12,6 +12,7 @@ from app.recipes.models import Recipe, RecipeIngredient, RecipeInteraction
 from app.sync.models import SyncLog
 from app.telemetry.models import ScanEvent, ExpiryAccuracyEvent, ScreenEvent
 from app.analytics.models import AnalyticsEvent
+from app.shopping_list.models import ShoppingItem
 
 config = context.config
 settings = get_settings()
