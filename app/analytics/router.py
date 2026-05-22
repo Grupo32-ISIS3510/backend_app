@@ -8,6 +8,7 @@ from app.common.dependencies import get_current_user
 from app.auth.models import User
 from app.analytics import service as analytics_service
 from app.analytics.schemas import (
+    AlertResponseTimesResponse,
     AnalyticsEventBatch,
     AnalyticsEventResponse,
     DashboardResponse,
@@ -205,3 +206,17 @@ def match_distribution(
 ):
     """Histograma de inventory_matches al momento de cocinar (1/2/3/4/5+)."""
     return analytics_service.get_match_distribution(db, days=days)
+
+
+# ── T3.4: Alert response times (Dashboard BQ T3.4) ───────────────────────────
+
+@router.get("/alert-response-times", response_model=AlertResponseTimesResponse)
+def alert_response_times(
+    days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Tiempo entre una notificación de alerta y la primera acción del usuario
+    (consumir o descartar el ítem). Devuelve avg/p50/p95/max en horas más
+    un histograma con 4 buckets. Si la muestra es < 5, retorna ceros."""
+    return analytics_service.get_alert_response_times(db, current_user.id, days)

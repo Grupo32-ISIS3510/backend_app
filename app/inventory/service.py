@@ -1,5 +1,6 @@
 from datetime import date
 from decimal import Decimal
+import logging
 import uuid
 
 from sqlalchemy import and_
@@ -8,6 +9,8 @@ from sqlalchemy.orm import Session
 from app.inventory.models import InventoryItem, InventoryEvent
 from app.inventory.schemas import ItemCreate, ItemUpdate, ItemDiscard, BulkItemsCreate
 from app.common.exceptions import AppException, ErrorCode
+
+logger = logging.getLogger(__name__)
 
 
 def get_items(db: Session, user_id: uuid.UUID, skip: int = 0, limit: int = 20):
@@ -55,6 +58,8 @@ def create_item(db: Session, user_id: uuid.UUID, data: ItemCreate) -> InventoryI
     db.add(event)
     db.commit()
     db.refresh(item)
+
+    _dispatch_immediate_expiry(db, user_id, item)
     return item
 
 
@@ -80,7 +85,24 @@ def bulk_create_items(db: Session, user_id: uuid.UUID, data: BulkItemsCreate) ->
     db.commit()
     for item in created_items:
         db.refresh(item)
+        _dispatch_immediate_expiry(db, user_id, item)
     return created_items
+
+
+def _dispatch_immediate_expiry(db: Session, user_id: uuid.UUID, item: InventoryItem) -> None:
+    """Dispara el push de expiración apenas se registra el item, en lugar de
+    esperar al scheduler horario. process_item_expiry_notification ya valida
+    threshold del usuario, dedupe y quiet hours, así que es seguro llamarlo
+    siempre. Cualquier fallo se loggea sin romper el create."""
+    try:
+        from app.notifications.service import process_item_expiry_notification
+        process_item_expiry_notification(
+            db=db, user_id=user_id, item=item, source="item_registered"
+        )
+    except Exception as exc:
+        logger.warning(
+            "immediate_expiry_dispatch_failed item_id=%s err=%s", item.id, exc
+        )
 
 
 def update_item(db: Session, user_id: uuid.UUID, item_id: uuid.UUID, data: ItemUpdate):

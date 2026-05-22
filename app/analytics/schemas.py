@@ -155,3 +155,20 @@ class ViewsVsCooksRow(BaseModel):
 class MatchBucket(BaseModel):
     matches: str
     count: int
+
+
+# ── T3.4: Alert response times ────────────────────────────────────────────────
+
+class AlertResponseBucket(BaseModel):
+    bucket: str
+    count: int
+
+
+class AlertResponseTimesResponse(BaseModel):
+    avg_hours: float
+    p50_hours: float
+    p95_hours: float
+    max_hours: float
+    sample_size: int
+    period_days: int
+    histogram: list[AlertResponseBucket]

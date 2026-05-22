@@ -28,70 +28,6 @@ from app.analytics.schemas import (
 )
 
 
-# ── T4.2 seed constants ───────────────────────────────────────────────────────
-
-_DEMO_USERS = [
-    {"email": "demo_mercado_1@secondserving.demo", "full_name": "Ana García",       "location": "Bogotá"},
-    {"email": "demo_mercado_2@secondserving.demo", "full_name": "Carlos Rodríguez", "location": "Medellín"},
-    {"email": "demo_mercado_3@secondserving.demo", "full_name": "María López",      "location": "Cali"},
-    {"email": "demo_mercado_4@secondserving.demo", "full_name": "José Martínez",    "location": "Barranquilla"},
-    {"email": "demo_mercado_5@secondserving.demo", "full_name": "Laura Hernández",  "location": "Bucaramanga"},
-    {"email": "demo_mercado_6@secondserving.demo", "full_name": "Diego Vargas",     "location": "Cartagena"},
-]
-
-# name → (category, unit, unit_price_cop)
-_CATALOG: dict[str, tuple[str, str, int]] = {
-    "Leche":            ("Lácteos",    "litros",    3_500),
-    "Queso Campesino":  ("Lácteos",    "kg",       18_000),
-    "Yogur Natural":    ("Lácteos",    "unidades",  4_500),
-    "Mantequilla":      ("Lácteos",    "kg",       22_000),
-    "Huevos":           ("Proteínas",  "unidades",    800),
-    "Pechuga de Pollo": ("Proteínas",  "kg",       15_000),
-    "Atún en Lata":     ("Proteínas",  "unidades",  6_500),
-    "Lenteja":          ("Proteínas",  "kg",        5_200),
-    "Arroz Blanco":     ("Cereales",   "kg",        4_200),
-    "Avena":            ("Cereales",   "kg",        5_600),
-    "Pan Tajado":       ("Cereales",   "unidades",  7_000),
-    "Banano":           ("Frutas",     "kg",        2_800),
-    "Manzana":          ("Frutas",     "kg",        6_500),
-    "Naranja":          ("Frutas",     "kg",        3_500),
-    "Tomate":           ("Verduras",   "kg",        4_500),
-    "Cebolla":          ("Verduras",   "kg",        3_800),
-    "Lechuga":          ("Verduras",   "unidades",  3_000),
-    "Zanahoria":        ("Verduras",   "kg",        3_200),
-    "Papa":             ("Verduras",   "kg",        2_800),
-    "Aceite de Cocina": ("Abarrotes",  "litros",   12_000),
-    "Azúcar":           ("Abarrotes",  "kg",        3_500),
-    "Café Molido":      ("Bebidas",    "kg",       28_000),
-    "Jugo de Naranja":  ("Bebidas",    "litros",    5_500),
-    "Agua Mineral":     ("Bebidas",    "litros",    2_000),
-}
-
-# list of (product_name, times_bought) per demo user (same order as _DEMO_USERS)
-_USER_PURCHASES: list[list[tuple[str, int]]] = [
-    # Ana García – compras familiares típicas
-    [("Leche", 3), ("Arroz Blanco", 3), ("Huevos", 3), ("Tomate", 2),
-     ("Banano", 2), ("Pan Tajado", 2), ("Queso Campesino", 2), ("Café Molido", 2),
-     ("Aceite de Cocina", 1), ("Lechuga", 1)],
-    # Carlos Rodríguez – dieta alta en proteínas
-    [("Leche", 2), ("Arroz Blanco", 2), ("Pechuga de Pollo", 3), ("Zanahoria", 2),
-     ("Papa", 3), ("Lenteja", 2), ("Avena", 1), ("Manzana", 2), ("Huevos", 2)],
-    # María López – frutas y verduras
-    [("Yogur Natural", 2), ("Leche", 2), ("Banano", 3), ("Naranja", 2),
-     ("Tomate", 3), ("Cebolla", 2), ("Arroz Blanco", 2), ("Azúcar", 2), ("Manzana", 1)],
-    # José Martínez – soltero, productos prácticos
-    [("Huevos", 3), ("Atún en Lata", 2), ("Arroz Blanco", 3), ("Pan Tajado", 3),
-     ("Café Molido", 3), ("Jugo de Naranja", 2), ("Agua Mineral", 2), ("Leche", 1)],
-    # Laura Hernández – amante de los lácteos
-    [("Leche", 3), ("Queso Campesino", 3), ("Mantequilla", 2), ("Arroz Blanco", 2),
-     ("Papa", 2), ("Cebolla", 3), ("Tomate", 2), ("Manzana", 2), ("Yogur Natural", 1)],
-    # Diego Vargas – dieta costeña
-    [("Pechuga de Pollo", 2), ("Huevos", 2), ("Arroz Blanco", 3), ("Banano", 2),
-     ("Naranja", 3), ("Agua Mineral", 3), ("Aceite de Cocina", 2), ("Azúcar", 2),
-     ("Lenteja", 1)],
-]
-
-
 def record_events(
     db: Session, user_id: uuid.UUID, batch: AnalyticsEventBatch
 ) -> AnalyticsEventResponse:
@@ -363,6 +299,63 @@ def get_dashboard(
     )
 
 
+# ── T4.2 seed constants ──────────────────────────────────────────────────────
+
+_DEMO_USERS = [
+    {"email": "demo_mercado_1@secondserving.demo", "full_name": "Ana García",       "location": "Bogotá"},
+    {"email": "demo_mercado_2@secondserving.demo", "full_name": "Carlos Rodríguez", "location": "Medellín"},
+    {"email": "demo_mercado_3@secondserving.demo", "full_name": "María López",      "location": "Cali"},
+    {"email": "demo_mercado_4@secondserving.demo", "full_name": "José Martínez",    "location": "Barranquilla"},
+    {"email": "demo_mercado_5@secondserving.demo", "full_name": "Laura Hernández",  "location": "Bucaramanga"},
+    {"email": "demo_mercado_6@secondserving.demo", "full_name": "Diego Vargas",     "location": "Cartagena"},
+]
+
+# name → (category, unit, unit_price_cop)
+_CATALOG: dict[str, tuple[str, str, int]] = {
+    "Leche":            ("Lácteos",    "litros",    3_500),
+    "Queso Campesino":  ("Lácteos",    "kg",       18_000),
+    "Yogur Natural":    ("Lácteos",    "unidades",  4_500),
+    "Mantequilla":      ("Lácteos",    "kg",       22_000),
+    "Huevos":           ("Proteínas",  "unidades",    800),
+    "Pechuga de Pollo": ("Proteínas",  "kg",       15_000),
+    "Atún en Lata":     ("Proteínas",  "unidades",  6_500),
+    "Lenteja":          ("Proteínas",  "kg",        5_200),
+    "Arroz Blanco":     ("Cereales",   "kg",        4_200),
+    "Avena":            ("Cereales",   "kg",        5_600),
+    "Pan Tajado":       ("Cereales",   "unidades",  7_000),
+    "Banano":           ("Frutas",     "kg",        2_800),
+    "Manzana":          ("Frutas",     "kg",        6_500),
+    "Naranja":          ("Frutas",     "kg",        3_500),
+    "Tomate":           ("Verduras",   "kg",        4_500),
+    "Cebolla":          ("Verduras",   "kg",        3_800),
+    "Lechuga":          ("Verduras",   "unidades",  3_000),
+    "Zanahoria":        ("Verduras",   "kg",        3_200),
+    "Papa":             ("Verduras",   "kg",        2_800),
+    "Aceite de Cocina": ("Abarrotes",  "litros",   12_000),
+    "Azúcar":           ("Abarrotes",  "kg",        3_500),
+    "Café Molido":      ("Bebidas",    "kg",       28_000),
+    "Jugo de Naranja":  ("Bebidas",    "litros",    5_500),
+    "Agua Mineral":     ("Bebidas",    "litros",    2_000),
+}
+
+_USER_PURCHASES: list[list[tuple[str, int]]] = [
+    [("Leche", 3), ("Arroz Blanco", 3), ("Huevos", 3), ("Tomate", 2),
+     ("Banano", 2), ("Pan Tajado", 2), ("Queso Campesino", 2), ("Café Molido", 2),
+     ("Aceite de Cocina", 1), ("Lechuga", 1)],
+    [("Leche", 2), ("Arroz Blanco", 2), ("Pechuga de Pollo", 3), ("Zanahoria", 2),
+     ("Papa", 3), ("Lenteja", 2), ("Avena", 1), ("Manzana", 2), ("Huevos", 2)],
+    [("Yogur Natural", 2), ("Leche", 2), ("Banano", 3), ("Naranja", 2),
+     ("Tomate", 3), ("Cebolla", 2), ("Arroz Blanco", 2), ("Azúcar", 2), ("Manzana", 1)],
+    [("Huevos", 3), ("Atún en Lata", 2), ("Arroz Blanco", 3), ("Pan Tajado", 3),
+     ("Café Molido", 3), ("Jugo de Naranja", 2), ("Agua Mineral", 2), ("Leche", 1)],
+    [("Leche", 3), ("Queso Campesino", 3), ("Mantequilla", 2), ("Arroz Blanco", 2),
+     ("Papa", 2), ("Cebolla", 3), ("Tomate", 2), ("Manzana", 2), ("Yogur Natural", 1)],
+    [("Pechuga de Pollo", 2), ("Huevos", 2), ("Arroz Blanco", 3), ("Banano", 2),
+     ("Naranja", 3), ("Agua Mineral", 3), ("Aceite de Cocina", 2), ("Azúcar", 2),
+     ("Lenteja", 1)],
+]
+
+
 # ── T4.2 ─────────────────────────────────────────────────────────────────────
 
 def get_top_products(
@@ -615,7 +608,7 @@ def get_notification_latency(db: Session, days: int = 30) -> dict:
                    MIN(occurred_at)               AS first_notif_at
             FROM analytics_events
             WHERE event_name = 'notification_received'
-              AND properties ? 'item_id'
+              AND (properties->>'item_id') ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
             GROUP BY properties->>'item_id'
         ),
         latencies AS (
@@ -623,7 +616,7 @@ def get_notification_latency(db: Session, days: int = 30) -> dict:
             FROM inventory_events r
             JOIN first_notification fn ON fn.item_id = r.item_id
             WHERE r.event_type = 'registered'
-              AND r.occurred_at > NOW() - (:days || ' days')::interval
+              AND r.occurred_at > NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
               AND fn.first_notif_at > r.occurred_at
         )
         SELECT
@@ -642,7 +635,7 @@ def get_notification_latency(db: Session, days: int = 30) -> dict:
                    MIN(occurred_at)               AS first_notif_at
             FROM analytics_events
             WHERE event_name = 'notification_received'
-              AND properties ? 'item_id'
+              AND (properties->>'item_id') ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
             GROUP BY properties->>'item_id'
         ),
         latencies AS (
@@ -650,7 +643,7 @@ def get_notification_latency(db: Session, days: int = 30) -> dict:
             FROM inventory_events r
             JOIN first_notification fn ON fn.item_id = r.item_id
             WHERE r.event_type = 'registered'
-              AND r.occurred_at > NOW() - (:days || ' days')::interval
+              AND r.occurred_at > NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
               AND fn.first_notif_at > r.occurred_at
         ),
         buckets AS (
@@ -782,6 +775,96 @@ def get_views_vs_cooks(db: Session, days: int = 30, limit: int = 10) -> list[dic
         }
         for r in rows
     ]
+
+
+# ── T3.4: Alert response times ────────────────────────────────────────────────
+
+def _percentile_cont(sorted_values: list[float], p: float) -> float:
+    """Linear-interpolated percentile equivalent to PostgreSQL PERCENTILE_CONT."""
+    if not sorted_values:
+        return 0.0
+    if len(sorted_values) == 1:
+        return float(sorted_values[0])
+    k = (len(sorted_values) - 1) * p
+    lo = int(k)
+    hi = min(lo + 1, len(sorted_values) - 1)
+    if lo == hi:
+        return float(sorted_values[lo])
+    return float(sorted_values[lo] + (sorted_values[hi] - sorted_values[lo]) * (k - lo))
+
+
+def get_alert_response_times(
+    db: Session, user_id: uuid.UUID, days: int = 30
+) -> dict:
+    """Tiempo (en horas) entre una notificación de alerta y la primera acción del usuario
+    sobre el ítem referenciado (consumed/discarded). Solo cuenta deltas positivos.
+
+    Si la muestra es menor a 5, devuelve ceros con histograma vacío
+    (datos insuficientes — no se considera error).
+    """
+    deltas_sql = text("""
+        SELECT
+            EXTRACT(EPOCH FROM (next_action.first_action_at - notif.occurred_at)) / 3600.0
+                AS hours
+        FROM analytics_events notif
+        CROSS JOIN LATERAL (
+            SELECT MIN(occurred_at) AS first_action_at
+            FROM inventory_events
+            WHERE user_id = :user_id
+              AND item_id = (notif.properties->>'item_id')::uuid
+              AND event_type IN ('consumed', 'discarded')
+              AND occurred_at > notif.occurred_at
+        ) next_action
+        WHERE notif.user_id = :user_id
+          AND notif.event_name IN ('notification_received', 'notification_opened')
+          AND notif.occurred_at > NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
+          AND notif.properties ? 'item_id'
+          AND (notif.properties->>'item_id')
+              ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          AND next_action.first_action_at IS NOT NULL
+          AND next_action.first_action_at > notif.occurred_at;
+    """)
+
+    rows = db.execute(deltas_sql, {"user_id": str(user_id), "days": days}).all()
+    deltas = sorted(float(r[0]) for r in rows if r[0] is not None and float(r[0]) > 0)
+    sample_size = len(deltas)
+
+    if sample_size < 5:
+        return {
+            "avg_hours": 0.0,
+            "p50_hours": 0.0,
+            "p95_hours": 0.0,
+            "max_hours": 0.0,
+            "sample_size": sample_size,
+            "period_days": days,
+            "histogram": [],
+        }
+
+    avg_hours = sum(deltas) / sample_size
+    p50_hours = _percentile_cont(deltas, 0.50)
+    p95_hours = _percentile_cont(deltas, 0.95)
+    max_hours = deltas[-1]
+
+    buckets = [
+        ("< 1h",   lambda d: d < 1),
+        ("1\u20136h",  lambda d: 1 <= d < 6),
+        ("6\u201324h", lambda d: 6 <= d < 24),
+        ("> 24h",  lambda d: d >= 24),
+    ]
+    histogram = [
+        {"bucket": label, "count": sum(1 for d in deltas if pred(d))}
+        for label, pred in buckets
+    ]
+
+    return {
+        "avg_hours": round(avg_hours, 2),
+        "p50_hours": round(p50_hours, 2),
+        "p95_hours": round(p95_hours, 2),
+        "max_hours": round(max_hours, 2),
+        "sample_size": sample_size,
+        "period_days": days,
+        "histogram": histogram,
+    }
 
 
 def get_match_distribution(db: Session, days: int = 30) -> list[dict]:
