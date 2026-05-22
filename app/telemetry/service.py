@@ -4,7 +4,12 @@ from datetime import datetime, timedelta
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.telemetry.models import ScanEvent, ExpiryAccuracyEvent, ScreenEvent
+from app.telemetry.models import (
+    ScanEvent,
+    ExpiryAccuracyEvent,
+    ScreenEvent,
+    FeatureUsageEvent,
+)
 from app.telemetry.schemas import (
     FailureBreakdownItem,
     ScanEventBatch,
@@ -19,6 +24,11 @@ from app.telemetry.schemas import (
     ScreenEventBatch,
     ScreenAbandonmentItem,
     AbandonmentStatsResponse,
+    FeatureUsageCreate,
+    FeatureUsageBatch,
+    FeatureUsageItem,
+    FeatureUsageStatsResponse,
+    FeatureFrequencyBucket,
 )
 
 
@@ -353,4 +363,124 @@ def get_abandonment_stats(
     return AbandonmentStatsResponse(
         total_sessions=total_sessions,
         screens=screens,
+    )
+
+
+# ── T3.1 — Feature Usage ──────────────────────────────────────────────
+
+
+def record_feature_usage(
+    db: Session, user_id: uuid.UUID, payload: FeatureUsageCreate
+) -> ScanEventResponse:
+    obj = FeatureUsageEvent(
+        user_id=user_id,
+        feature=payload.feature,
+        timestamp=payload.timestamp,
+    )
+    db.add(obj)
+    db.commit()
+    return ScanEventResponse(received=1)
+
+
+def record_feature_usage_batch(
+    db: Session, user_id: uuid.UUID, batch: FeatureUsageBatch
+) -> ScanEventResponse:
+    objects = [
+        FeatureUsageEvent(
+            user_id=user_id,
+            feature=evt.feature,
+            timestamp=evt.timestamp,
+        )
+        for evt in batch.events
+    ]
+    db.bulk_save_objects(objects)
+    db.commit()
+    return ScanEventResponse(received=len(objects))
+
+
+def _bucket_for(count: int) -> str:
+    """Buckets de distribución para el dashboard (BQ T3.1)."""
+    if count == 1:
+        return "1"
+    if count <= 5:
+        return "2-5"
+    if count <= 10:
+        return "6-10"
+    return "11+"
+
+
+# Orden estable para que el dashboard lo pinte siempre igual.
+_BUCKET_ORDER = ["1", "2-5", "6-10", "11+"]
+
+
+def get_feature_usage_stats(
+    db: Session, days: int
+) -> FeatureUsageStatsResponse:
+    """Distribución de frecuencia de uso por feature entre usuarios activos
+    en la ventana de los ultimos `days` (default 7 desde el router)."""
+    since = datetime.utcnow() - timedelta(days=days)
+
+    # Total de usos por feature en la ventana
+    totals = (
+        db.query(
+            FeatureUsageEvent.feature,
+            func.count(FeatureUsageEvent.id).label("total"),
+            func.count(func.distinct(FeatureUsageEvent.user_id)).label("active_users"),
+        )
+        .filter(FeatureUsageEvent.timestamp >= since)
+        .group_by(FeatureUsageEvent.feature)
+        .all()
+    )
+
+    # Conteo por usuario y feature: para construir la distribución de frecuencias.
+    per_user = (
+        db.query(
+            FeatureUsageEvent.feature,
+            FeatureUsageEvent.user_id,
+            func.count(FeatureUsageEvent.id).label("uses"),
+        )
+        .filter(FeatureUsageEvent.timestamp >= since)
+        .group_by(FeatureUsageEvent.feature, FeatureUsageEvent.user_id)
+        .all()
+    )
+
+    # feature -> { bucket -> users_count }
+    dist: dict[str, dict[str, int]] = {}
+    for row in per_user:
+        bucket = _bucket_for(row.uses)
+        dist.setdefault(row.feature, {b: 0 for b in _BUCKET_ORDER})
+        dist[row.feature][bucket] += 1
+
+    # Usuarios activos globales (distintos en cualquier feature).
+    active_users_total = (
+        db.query(func.count(func.distinct(FeatureUsageEvent.user_id)))
+        .filter(FeatureUsageEvent.timestamp >= since)
+        .scalar()
+        or 0
+    )
+
+    features = []
+    for row in totals:
+        avg = round(row.total / row.active_users, 2) if row.active_users else 0.0
+        bucket_map = dist.get(row.feature, {b: 0 for b in _BUCKET_ORDER})
+        features.append(
+            FeatureUsageItem(
+                feature=row.feature,
+                total_uses=row.total,
+                active_users=row.active_users,
+                avg_uses_per_user=avg,
+                distribution=[
+                    FeatureFrequencyBucket(bucket=b, users=bucket_map.get(b, 0))
+                    for b in _BUCKET_ORDER
+                ],
+            )
+        )
+
+    # Orden alfabético por feature → salida estable para el dashboard.
+    features.sort(key=lambda f: f.feature)
+
+    return FeatureUsageStatsResponse(
+        period_days=days,
+        active_users=active_users_total,
+        features=features,
     )

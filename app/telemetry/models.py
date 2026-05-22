@@ -43,3 +43,18 @@ class ScreenEvent(Base):
     exit_reason = Column(String(100), nullable=True)
     dwell_time_ms = Column(Integer, nullable=False, default=0)
     received_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ── T3.1 — Feature Usage Events ──────────────────────────────
+# Cada apertura/uso de una feature por parte de un usuario.
+# Alimenta el dashboard con la distribución semanal de frecuencia
+# de uso por feature entre usuarios activos.
+
+class FeatureUsageEvent(Base):
+    __tablename__ = "feature_usage_events"
+
+    id          = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id     = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    feature     = Column(String(50), nullable=False, index=True)
+    timestamp   = Column(DateTime, nullable=False)
+    received_at = Column(DateTime, default=datetime.utcnow)
