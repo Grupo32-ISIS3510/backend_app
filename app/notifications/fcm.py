@@ -1,3 +1,5 @@
+from typing import Optional
+
 import firebase_admin
 from firebase_admin import credentials, messaging
 from app.config import get_settings
@@ -6,7 +8,7 @@ from pathlib import Path
 settings = get_settings()
 
 firebase_available = False
-firebase_error: str | None = None
+firebase_error: Optional[str] = None
 
 
 def initialize_firebase_once() -> bool:

@@ -91,3 +91,34 @@ class ScreenAbandonmentItem(BaseModel):
 class AbandonmentStatsResponse(BaseModel):
     total_sessions: int
     screens: list[ScreenAbandonmentItem]
+
+
+# ── Feature Usage (T3.1) ─────────────────────────────────────
+
+class FeatureUsageCreate(BaseModel):
+    timestamp: datetime
+    feature: str = Field(..., max_length=50)
+
+
+class FeatureUsageBatch(BaseModel):
+    events: list[FeatureUsageCreate] = Field(..., min_length=1, max_length=500)
+
+
+class FeatureFrequencyBucket(BaseModel):
+    """Distribución: cuántos usuarios usaron la feature N veces en la ventana."""
+    bucket: str   # ej: "1", "2-5", "6-10", "11+"
+    users: int
+
+
+class FeatureUsageItem(BaseModel):
+    feature: str
+    total_uses: int
+    active_users: int           # usuarios distintos que la usaron en la ventana
+    avg_uses_per_user: float    # total_uses / active_users
+    distribution: list[FeatureFrequencyBucket]
+
+
+class FeatureUsageStatsResponse(BaseModel):
+    period_days: int
+    active_users: int           # usuarios distintos que usaron CUALQUIER feature
+    features: list[FeatureUsageItem]

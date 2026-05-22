@@ -16,6 +16,9 @@ from app.telemetry.schemas import (
     ScreenEventCreate,
     ScreenEventBatch,
     AbandonmentStatsResponse,
+    FeatureUsageCreate,
+    FeatureUsageBatch,
+    FeatureUsageStatsResponse,
 )
 
 router = APIRouter(prefix="/api/v1/telemetry", tags=["Telemetry"])
@@ -125,3 +128,36 @@ def get_abandonment_stats(
 ):
     """Estadísticas de tasa de abandono por pantalla de registro de alimentos."""
     return telemetry_service.get_abandonment_stats(db, days)
+
+
+# ── T3.1  Feature Usage ───────────────────────────────────────
+
+@router.post("/feature-events", response_model=ScanEventResponse, status_code=201)
+def record_feature_event(
+    payload: FeatureUsageCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Registra un uso individual de una feature por parte del usuario."""
+    return telemetry_service.record_feature_usage(db, current_user.id, payload)
+
+
+@router.post("/feature-events/batch", response_model=ScanEventResponse, status_code=201)
+def record_feature_event_batch(
+    batch: FeatureUsageBatch,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Registra múltiples usos de features acumulados offline."""
+    return telemetry_service.record_feature_usage_batch(db, current_user.id, batch)
+
+
+@router.get("/feature-usage-stats", response_model=FeatureUsageStatsResponse)
+def get_feature_usage_stats(
+    days: int = Query(7, ge=1, le=365),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """BQ T3.1 — Distribución de frecuencia de uso semanal por feature
+    entre usuarios activos. Por defecto cubre la última semana."""
+    return telemetry_service.get_feature_usage_stats(db, days)

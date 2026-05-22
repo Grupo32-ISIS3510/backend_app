@@ -107,3 +107,70 @@ class SeedDemoResponse(BaseModel):
     users_created: int
     items_created: int
     events_created: int
+
+
+# ── T1.1: Notification latency & inventory events ────────────────────────────
+
+class LatencyBucket(BaseModel):
+    bucket: str
+    count: int
+
+
+class NotificationLatencyResponse(BaseModel):
+    avg_seconds: float
+    p50_seconds: float
+    p95_seconds: float
+    max_seconds: float
+    sample_size: int
+    histogram: list[LatencyBucket]
+    period_days: int
+
+
+class InventoryEventsSummaryResponse(BaseModel):
+    total_registered: int
+    eligible_for_alert: int
+    period_days: int
+
+
+# ── T2.3: Recipe interactions ─────────────────────────────────────────────────
+
+class RecipeInteractionsSummary(BaseModel):
+    total_cooked: int
+    total_viewed: int
+    cook_through_rate: float
+    avg_inventory_matches_on_cook: Optional[float]
+    period_days: int
+
+
+class TopCookedRecipe(BaseModel):
+    name: str
+    cooks: int
+
+
+class ViewsVsCooksRow(BaseModel):
+    name: str
+    views: int
+    cooks: int
+    rate_pct: Optional[float]
+
+
+class MatchBucket(BaseModel):
+    matches: str
+    count: int
+
+
+# ── T3.4: Alert response times ────────────────────────────────────────────────
+
+class AlertResponseBucket(BaseModel):
+    bucket: str
+    count: int
+
+
+class AlertResponseTimesResponse(BaseModel):
+    avg_hours: float
+    p50_hours: float
+    p95_hours: float
+    max_hours: float
+    sample_size: int
+    period_days: int
+    histogram: list[AlertResponseBucket]

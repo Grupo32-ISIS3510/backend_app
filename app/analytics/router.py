@@ -8,6 +8,7 @@ from app.common.dependencies import get_current_user
 from app.auth.models import User
 from app.analytics import service as analytics_service
 from app.analytics.schemas import (
+    AlertResponseTimesResponse,
     AnalyticsEventBatch,
     AnalyticsEventResponse,
     DashboardResponse,
@@ -15,7 +16,16 @@ from app.analytics.schemas import (
     MarketProductTrendsResponse,
     SavingsResponse,
     SeedDemoResponse,
+    InventoryEventsSummaryResponse,
+    MarketProductTrendsResponse,
+    MatchBucket,
+    NotificationLatencyResponse,
+    RecipeInteractionsSummary,
+    SavingsResponse,
+    SeedDemoResponse,
+    TopCookedRecipe,
     UserSegmentResponse,
+    ViewsVsCooksRow,
     WasteSummaryResponse,
     WasteTrendItem,
 )
@@ -48,6 +58,7 @@ def get_events_summary(
 
 
 # ── Pipeline: Consume ────────────────────────────────────────────────────────
+
 @router.get("/savings", response_model=SavingsResponse)
 def get_savings(
     month: int = Query(_now.month, ge=1, le=12),
@@ -132,3 +143,83 @@ def get_top_products(
     Ejecutar primero `POST /market/seed-demo` si la BD está vacía.
     """
     return analytics_service.get_top_products(db, top_n=top_n, category=category, min_users=min_users)
+
+
+# ── T1.1: Notification latency & inventory events ────────────────────────────
+
+@router.get("/notification-latency", response_model=NotificationLatencyResponse)
+def notification_latency(
+    days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Latencia entre registro de ítem y primera notificación recibida."""
+    return analytics_service.get_notification_latency(db, days=days)
+
+
+@router.get("/inventory-events/summary", response_model=InventoryEventsSummaryResponse)
+def inventory_events_summary(
+    days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Total de ítems registrados y cuántos eran elegibles para alerta (≤3 días al vencer)."""
+    return analytics_service.get_inventory_events_summary(db, days=days)
+
+
+# ── T2.3: Recipe interactions ─────────────────────────────────────────────────
+
+@router.get("/recipe-interactions/summary", response_model=RecipeInteractionsSummary)
+def recipe_interactions_summary(
+    days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Resumen de interacciones: total cocinado/visto, cook-through rate y matches promedio."""
+    return analytics_service.get_recipe_interactions_summary(db, days=days)
+
+
+@router.get("/recipe-interactions/top-cooked", response_model=list[TopCookedRecipe])
+def top_cooked_recipes(
+    days: int = Query(30, ge=1, le=365),
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Ranking de recetas más cocinadas en los últimos N días."""
+    return analytics_service.get_top_cooked_recipes(db, days=days, limit=limit)
+
+
+@router.get("/recipe-interactions/views-vs-cooks", response_model=list[ViewsVsCooksRow])
+def views_vs_cooks(
+    days: int = Query(30, ge=1, le=365),
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Comparativo de vistas vs cocinadas por receta con cook-through rate individual."""
+    return analytics_service.get_views_vs_cooks(db, days=days, limit=limit)
+
+
+@router.get("/recipe-interactions/match-distribution", response_model=list[MatchBucket])
+def match_distribution(
+    days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Histograma de inventory_matches al momento de cocinar (1/2/3/4/5+)."""
+    return analytics_service.get_match_distribution(db, days=days)
+
+
+# ── T3.4: Alert response times (Dashboard BQ T3.4) ───────────────────────────
+
+@router.get("/alert-response-times", response_model=AlertResponseTimesResponse)
+def alert_response_times(
+    days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Tiempo entre una notificación de alerta y la primera acción del usuario
+    (consumir o descartar el ítem). Devuelve avg/p50/p95/max en horas más
+    un histograma con 4 buckets. Si la muestra es < 5, retorna ceros."""
+    return analytics_service.get_alert_response_times(db, current_user.id, days)

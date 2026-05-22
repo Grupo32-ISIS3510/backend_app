@@ -140,18 +140,13 @@ def interact(
 ) -> None:
     recipe = _get_recipe_or_404(db, recipe_id)
 
-    interaction = RecipeInteraction(
-        user_id=user_id,
-        recipe_id=recipe.id,
-        action=action,
-    )
-    db.add(interaction)
-
+    matches = None
     if action == "cooked":
-        # Marcar como consumidos los ítems del inventario que coincidan con ingredientes
         active_items = _get_active_items(db, user_id)
-        consumed_ids: set[uuid.UUID] = set()
+        active_names = {item.name for item in active_items}
+        matches = _compute_matches(recipe, active_names)
 
+        consumed_ids: set[uuid.UUID] = set()
         for ing in recipe.ingredients:
             for item in active_items:
                 if item.id not in consumed_ids and _item_matches_ingredient(item.name, ing.ingredient_name):
@@ -166,6 +161,13 @@ def interact(
                     )
                     db.add(event)
 
+    interaction = RecipeInteraction(
+        user_id=user_id,
+        recipe_id=recipe.id,
+        action=action,
+        inventory_matches=matches,
+    )
+    db.add(interaction)
     db.commit()
 
 
