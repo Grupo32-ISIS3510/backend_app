@@ -59,3 +59,22 @@ class RecipeSummaryResponse(BaseModel):
 class RecipeListResponse(BaseModel):
     items: list[RecipeSummaryResponse]
     total: int
+
+
+# ── T3.6 Favoritos ──────────────────────────────────────────────────────────
+
+class RecipeFavoriteItem(BaseModel):
+    id: UUID4
+    recipe_id: UUID4
+    name: str
+    category: Optional[str] = None
+    image_url: Optional[str] = None
+    favorited_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class RecipeFavoritesListResponse(BaseModel):
+    items: list[RecipeFavoriteItem]
+    total: int

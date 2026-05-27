@@ -42,6 +42,8 @@ class InventoryEvent(Base):
     reason      = Column(String(50), nullable=True)   # motivo del descarte
     quantity    = Column(Numeric(10, 2), nullable=True)
     unit_price  = Column(Numeric(10, 2), nullable=True)
+    # T3.2: recipe responsable de un consumo (NULL si fue manual / no vino de cocinar una receta)
+    recipe_id   = Column(UUID(as_uuid=True), ForeignKey("recipes.id"), nullable=True, index=True)
     occurred_at = Column(DateTime, default=datetime.utcnow)
 
     item        = relationship("InventoryItem", back_populates="events")
