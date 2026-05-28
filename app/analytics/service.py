@@ -826,7 +826,7 @@ def get_alert_response_times(
         WHERE notif.user_id = :user_id
           AND notif.event_name IN ('notification_received', 'notification_opened')
           AND notif.occurred_at > NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
-          AND notif.properties ? 'item_id'
+          AND notif.properties::jsonb ? 'item_id'
           AND (notif.properties->>'item_id')
               ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
           AND next_action.first_action_at IS NOT NULL
@@ -1177,7 +1177,7 @@ def get_segments_patterns(db: Session, days: int = 30) -> SegmentsPatternsRespon
         ) next_action
         WHERE notif.event_name IN ('notification_received', 'notification_opened')
           AND notif.occurred_at > NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
-          AND notif.properties ? 'item_id'
+          AND notif.properties::jsonb ? 'item_id'
           AND (notif.properties->>'item_id')
               ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
           AND next_action.first_action_at > notif.occurred_at;
