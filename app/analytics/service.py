@@ -860,74 +860,113 @@ def _percentile_cont(sorted_values: list[float], p: float) -> float:
 def get_alert_response_times(
     db: Session, user_id: uuid.UUID, days: int = 30
 ) -> dict:
-    """Tiempo (en horas) entre una notificación de alerta y la primera acción del usuario
-    sobre el ítem referenciado (consumed/discarded). Solo cuenta deltas positivos.
+    """Distribución del tiempo (en minutos) entre el envío de una alerta de
+    vencimiento (notification_dispatches con status='sent') y la primera acción
+    del usuario sobre el ítem (consumed/discarded). Solo cuenta despachos que
+    derivaron en una acción posterior: equivale a "usuarios que toman acción".
 
-    Si la muestra es menor a 5, devuelve ceros con histograma vacío
-    (datos insuficientes — no se considera error).
+    Toma el primer despacho por ítem para no inflar la muestra cuando un ítem
+    recibe alertas en días consecutivos. Devuelve avg/p50/p95/max en minutos,
+    un histograma de 8 buckets y un desglose por categoría (más lentas primero,
+    candidatas a alertar con más anticipación).
+
+    Si la muestra global es menor a 5, devuelve ceros con arrays vacíos
+    (datos insuficientes, no se considera error).
     """
-    deltas_sql = text("""
+    rows_sql = text("""
+        WITH first_dispatch AS (
+            SELECT nd.item_id, MIN(nd.created_at) AS first_alert_at
+            FROM notification_dispatches nd
+            WHERE nd.user_id = :user_id
+              AND nd.notification_type = 'expiry_alert'
+              AND nd.status = 'sent'
+              AND nd.item_id IS NOT NULL
+              AND nd.created_at > NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
+            GROUP BY nd.item_id
+        )
         SELECT
-            EXTRACT(EPOCH FROM (next_action.first_action_at - notif.occurred_at)) / 3600.0
-                AS hours
-        FROM analytics_events notif
+            COALESCE(ii.category, 'Sin categoría') AS category,
+            EXTRACT(EPOCH FROM (act.first_action_at - fd.first_alert_at)) / 60.0
+                AS minutes
+        FROM first_dispatch fd
+        JOIN inventory_items ii ON ii.id = fd.item_id
         CROSS JOIN LATERAL (
-            SELECT MIN(occurred_at) AS first_action_at
-            FROM inventory_events
-            WHERE user_id = :user_id
-              AND item_id = (notif.properties->>'item_id')::uuid
-              AND event_type IN ('consumed', 'discarded')
-              AND occurred_at > notif.occurred_at
-        ) next_action
-        WHERE notif.user_id = :user_id
-          AND notif.event_name IN ('notification_received', 'notification_opened')
-          AND notif.occurred_at > NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
-          AND notif.properties ? 'item_id'
-          AND (notif.properties->>'item_id')
-              ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-          AND next_action.first_action_at IS NOT NULL
-          AND next_action.first_action_at > notif.occurred_at;
+            SELECT MIN(ie.occurred_at) AS first_action_at
+            FROM inventory_events ie
+            WHERE ie.user_id = :user_id
+              AND ie.item_id = fd.item_id
+              AND ie.event_type IN ('consumed', 'discarded')
+              AND ie.occurred_at > fd.first_alert_at
+        ) act
+        WHERE act.first_action_at IS NOT NULL;
     """)
 
-    rows = db.execute(deltas_sql, {"user_id": str(user_id), "days": days}).all()
-    deltas = sorted(float(r[0]) for r in rows if r[0] is not None and float(r[0]) > 0)
+    rows = db.execute(rows_sql, {"user_id": str(user_id), "days": days}).all()
+    pairs = [
+        (r[0], float(r[1]))
+        for r in rows
+        if r[1] is not None and float(r[1]) > 0
+    ]
+    deltas = sorted(minutes for _, minutes in pairs)
     sample_size = len(deltas)
 
     if sample_size < 5:
         return {
-            "avg_hours": 0.0,
-            "p50_hours": 0.0,
-            "p95_hours": 0.0,
-            "max_hours": 0.0,
+            "avg_minutes": 0.0,
+            "p50_minutes": 0.0,
+            "p95_minutes": 0.0,
+            "max_minutes": 0.0,
             "sample_size": sample_size,
             "period_days": days,
             "histogram": [],
+            "by_category": [],
         }
 
-    avg_hours = sum(deltas) / sample_size
-    p50_hours = _percentile_cont(deltas, 0.50)
-    p95_hours = _percentile_cont(deltas, 0.95)
-    max_hours = deltas[-1]
+    avg_minutes = sum(deltas) / sample_size
+    p50_minutes = _percentile_cont(deltas, 0.50)
+    p95_minutes = _percentile_cont(deltas, 0.95)
+    max_minutes = deltas[-1]
 
     buckets = [
-        ("< 1h",   lambda d: d < 1),
-        ("1\u20136h",  lambda d: 1 <= d < 6),
-        ("6\u201324h", lambda d: 6 <= d < 24),
-        ("> 24h",  lambda d: d >= 24),
+        ("< 5 min",   lambda d: d < 5),
+        ("5\u201315 min",  lambda d: 5 <= d < 15),
+        ("15\u201330 min", lambda d: 15 <= d < 30),
+        ("30\u201360 min", lambda d: 30 <= d < 60),
+        ("1\u20133 h",     lambda d: 60 <= d < 180),
+        ("3\u20136 h",     lambda d: 180 <= d < 360),
+        ("6\u201324 h",    lambda d: 360 <= d < 1440),
+        ("> 24 h",    lambda d: d >= 1440),
     ]
     histogram = [
         {"bucket": label, "count": sum(1 for d in deltas if pred(d))}
         for label, pred in buckets
     ]
 
+    by_cat: dict[str, list[float]] = {}
+    for category, minutes in pairs:
+        by_cat.setdefault(category, []).append(minutes)
+
+    by_category = []
+    for category, values in by_cat.items():
+        values.sort()
+        n = len(values)
+        by_category.append({
+            "category": category,
+            "sample_size": n,
+            "avg_minutes": round(sum(values) / n, 2),
+            "p50_minutes": round(_percentile_cont(values, 0.50), 2),
+        })
+    by_category.sort(key=lambda c: c["avg_minutes"], reverse=True)
+
     return {
-        "avg_hours": round(avg_hours, 2),
-        "p50_hours": round(p50_hours, 2),
-        "p95_hours": round(p95_hours, 2),
-        "max_hours": round(max_hours, 2),
+        "avg_minutes": round(avg_minutes, 2),
+        "p50_minutes": round(p50_minutes, 2),
+        "p95_minutes": round(p95_minutes, 2),
+        "max_minutes": round(max_minutes, 2),
         "sample_size": sample_size,
         "period_days": days,
         "histogram": histogram,
+        "by_category": by_category,
     }
 
 

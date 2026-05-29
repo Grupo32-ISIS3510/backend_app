@@ -166,11 +166,19 @@ class AlertResponseBucket(BaseModel):
     count: int
 
 
+class AlertResponseCategoryStat(BaseModel):
+    category: str
+    sample_size: int
+    avg_minutes: float
+    p50_minutes: float
+
+
 class AlertResponseTimesResponse(BaseModel):
-    avg_hours: float
-    p50_hours: float
-    p95_hours: float
-    max_hours: float
+    avg_minutes: float
+    p50_minutes: float
+    p95_minutes: float
+    max_minutes: float
     sample_size: int
     period_days: int
     histogram: list[AlertResponseBucket]
+    by_category: list[AlertResponseCategoryStat]
