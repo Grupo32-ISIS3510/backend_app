@@ -36,6 +36,70 @@ from app.analytics.schemas import (
 )
 
 
+# ── T4.2 seed constants ───────────────────────────────────────────────────────
+
+_DEMO_USERS = [
+    {"email": "demo_mercado_1@secondserving.demo", "full_name": "Ana García",       "location": "Bogotá"},
+    {"email": "demo_mercado_2@secondserving.demo", "full_name": "Carlos Rodríguez", "location": "Medellín"},
+    {"email": "demo_mercado_3@secondserving.demo", "full_name": "María López",      "location": "Cali"},
+    {"email": "demo_mercado_4@secondserving.demo", "full_name": "José Martínez",    "location": "Barranquilla"},
+    {"email": "demo_mercado_5@secondserving.demo", "full_name": "Laura Hernández",  "location": "Bucaramanga"},
+    {"email": "demo_mercado_6@secondserving.demo", "full_name": "Diego Vargas",     "location": "Cartagena"},
+]
+
+# name → (category, unit, unit_price_cop)
+_CATALOG: dict[str, tuple[str, str, int]] = {
+    "Leche":            ("Lácteos",    "litros",    3_500),
+    "Queso Campesino":  ("Lácteos",    "kg",       18_000),
+    "Yogur Natural":    ("Lácteos",    "unidades",  4_500),
+    "Mantequilla":      ("Lácteos",    "kg",       22_000),
+    "Huevos":           ("Proteínas",  "unidades",    800),
+    "Pechuga de Pollo": ("Proteínas",  "kg",       15_000),
+    "Atún en Lata":     ("Proteínas",  "unidades",  6_500),
+    "Lenteja":          ("Proteínas",  "kg",        5_200),
+    "Arroz Blanco":     ("Cereales",   "kg",        4_200),
+    "Avena":            ("Cereales",   "kg",        5_600),
+    "Pan Tajado":       ("Cereales",   "unidades",  7_000),
+    "Banano":           ("Frutas",     "kg",        2_800),
+    "Manzana":          ("Frutas",     "kg",        6_500),
+    "Naranja":          ("Frutas",     "kg",        3_500),
+    "Tomate":           ("Verduras",   "kg",        4_500),
+    "Cebolla":          ("Verduras",   "kg",        3_800),
+    "Lechuga":          ("Verduras",   "unidades",  3_000),
+    "Zanahoria":        ("Verduras",   "kg",        3_200),
+    "Papa":             ("Verduras",   "kg",        2_800),
+    "Aceite de Cocina": ("Abarrotes",  "litros",   12_000),
+    "Azúcar":           ("Abarrotes",  "kg",        3_500),
+    "Café Molido":      ("Bebidas",    "kg",       28_000),
+    "Jugo de Naranja":  ("Bebidas",    "litros",    5_500),
+    "Agua Mineral":     ("Bebidas",    "litros",    2_000),
+}
+
+# list of (product_name, times_bought) per demo user (same order as _DEMO_USERS)
+_USER_PURCHASES: list[list[tuple[str, int]]] = [
+    # Ana García – compras familiares típicas
+    [("Leche", 3), ("Arroz Blanco", 3), ("Huevos", 3), ("Tomate", 2),
+     ("Banano", 2), ("Pan Tajado", 2), ("Queso Campesino", 2), ("Café Molido", 2),
+     ("Aceite de Cocina", 1), ("Lechuga", 1)],
+    # Carlos Rodríguez – dieta alta en proteínas
+    [("Leche", 2), ("Arroz Blanco", 2), ("Pechuga de Pollo", 3), ("Zanahoria", 2),
+     ("Papa", 3), ("Lenteja", 2), ("Avena", 1), ("Manzana", 2), ("Huevos", 2)],
+    # María López – frutas y verduras
+    [("Yogur Natural", 2), ("Leche", 2), ("Banano", 3), ("Naranja", 2),
+     ("Tomate", 3), ("Cebolla", 2), ("Arroz Blanco", 2), ("Azúcar", 2), ("Manzana", 1)],
+    # José Martínez – soltero, productos prácticos
+    [("Huevos", 3), ("Atún en Lata", 2), ("Arroz Blanco", 3), ("Pan Tajado", 3),
+     ("Café Molido", 3), ("Jugo de Naranja", 2), ("Agua Mineral", 2), ("Leche", 1)],
+    # Laura Hernández – amante de los lácteos
+    [("Leche", 3), ("Queso Campesino", 3), ("Mantequilla", 2), ("Arroz Blanco", 2),
+     ("Papa", 2), ("Cebolla", 3), ("Tomate", 2), ("Manzana", 2), ("Yogur Natural", 1)],
+    # Diego Vargas – dieta costeña
+    [("Pechuga de Pollo", 2), ("Huevos", 2), ("Arroz Blanco", 3), ("Banano", 2),
+     ("Naranja", 3), ("Agua Mineral", 3), ("Aceite de Cocina", 2), ("Azúcar", 2),
+     ("Lenteja", 1)],
+]
+
+
 def record_events(
     db: Session, user_id: uuid.UUID, batch: AnalyticsEventBatch
 ) -> AnalyticsEventResponse:
@@ -804,17 +868,36 @@ def _percentile_cont(sorted_values: list[float], p: float) -> float:
 def get_alert_response_times(
     db: Session, user_id: uuid.UUID, days: int = 30
 ) -> dict:
-    """Tiempo (en horas) entre una notificación de alerta y la primera acción del usuario
-    sobre el ítem referenciado (consumed/discarded). Solo cuenta deltas positivos.
+    """Distribución del tiempo (en minutos) entre el envío de una alerta de
+    vencimiento (notification_dispatches con status='sent') y la primera acción
+    del usuario sobre el ítem (consumed/discarded). Solo cuenta despachos que
+    derivaron en una acción posterior: equivale a "usuarios que toman acción".
 
-    Si la muestra es menor a 5, devuelve ceros con histograma vacío
-    (datos insuficientes — no se considera error).
+    Toma el primer despacho por ítem para no inflar la muestra cuando un ítem
+    recibe alertas en días consecutivos. Devuelve avg/p50/p95/max en minutos,
+    un histograma de 8 buckets y un desglose por categoría (más lentas primero,
+    candidatas a alertar con más anticipación).
+
+    Si la muestra global es menor a 5, devuelve ceros con arrays vacíos
+    (datos insuficientes, no se considera error).
     """
-    deltas_sql = text("""
+    rows_sql = text("""
+        WITH first_dispatch AS (
+            SELECT nd.item_id, MIN(nd.created_at) AS first_alert_at
+            FROM notification_dispatches nd
+            WHERE nd.user_id = :user_id
+              AND nd.notification_type = 'expiry_alert'
+              AND nd.status = 'sent'
+              AND nd.item_id IS NOT NULL
+              AND nd.created_at > NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
+            GROUP BY nd.item_id
+        )
         SELECT
-            EXTRACT(EPOCH FROM (next_action.first_action_at - notif.occurred_at)) / 3600.0
-                AS hours
-        FROM analytics_events notif
+            COALESCE(ii.category, 'Sin categoría') AS category,
+            EXTRACT(EPOCH FROM (act.first_action_at - fd.first_alert_at)) / 60.0
+                AS minutes
+        FROM first_dispatch fd
+        JOIN inventory_items ii ON ii.id = fd.item_id
         CROSS JOIN LATERAL (
             SELECT MIN(occurred_at) AS first_action_at
             FROM inventory_events
@@ -831,47 +914,82 @@ def get_alert_response_times(
               ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
           AND next_action.first_action_at IS NOT NULL
           AND next_action.first_action_at > notif.occurred_at;
+            SELECT MIN(ie.occurred_at) AS first_action_at
+            FROM inventory_events ie
+            WHERE ie.user_id = :user_id
+              AND ie.item_id = fd.item_id
+              AND ie.event_type IN ('consumed', 'discarded')
+              AND ie.occurred_at > fd.first_alert_at
+        ) act
+        WHERE act.first_action_at IS NOT NULL;
     """)
 
-    rows = db.execute(deltas_sql, {"user_id": str(user_id), "days": days}).all()
-    deltas = sorted(float(r[0]) for r in rows if r[0] is not None and float(r[0]) > 0)
+    rows = db.execute(rows_sql, {"user_id": str(user_id), "days": days}).all()
+    pairs = [
+        (r[0], float(r[1]))
+        for r in rows
+        if r[1] is not None and float(r[1]) > 0
+    ]
+    deltas = sorted(minutes for _, minutes in pairs)
     sample_size = len(deltas)
 
     if sample_size < 5:
         return {
-            "avg_hours": 0.0,
-            "p50_hours": 0.0,
-            "p95_hours": 0.0,
-            "max_hours": 0.0,
+            "avg_minutes": 0.0,
+            "p50_minutes": 0.0,
+            "p95_minutes": 0.0,
+            "max_minutes": 0.0,
             "sample_size": sample_size,
             "period_days": days,
             "histogram": [],
+            "by_category": [],
         }
 
-    avg_hours = sum(deltas) / sample_size
-    p50_hours = _percentile_cont(deltas, 0.50)
-    p95_hours = _percentile_cont(deltas, 0.95)
-    max_hours = deltas[-1]
+    avg_minutes = sum(deltas) / sample_size
+    p50_minutes = _percentile_cont(deltas, 0.50)
+    p95_minutes = _percentile_cont(deltas, 0.95)
+    max_minutes = deltas[-1]
 
     buckets = [
-        ("< 1h",   lambda d: d < 1),
-        ("1\u20136h",  lambda d: 1 <= d < 6),
-        ("6\u201324h", lambda d: 6 <= d < 24),
-        ("> 24h",  lambda d: d >= 24),
+        ("< 5 min",   lambda d: d < 5),
+        ("5\u201315 min",  lambda d: 5 <= d < 15),
+        ("15\u201330 min", lambda d: 15 <= d < 30),
+        ("30\u201360 min", lambda d: 30 <= d < 60),
+        ("1\u20133 h",     lambda d: 60 <= d < 180),
+        ("3\u20136 h",     lambda d: 180 <= d < 360),
+        ("6\u201324 h",    lambda d: 360 <= d < 1440),
+        ("> 24 h",    lambda d: d >= 1440),
     ]
     histogram = [
         {"bucket": label, "count": sum(1 for d in deltas if pred(d))}
         for label, pred in buckets
     ]
 
+    by_cat: dict[str, list[float]] = {}
+    for category, minutes in pairs:
+        by_cat.setdefault(category, []).append(minutes)
+
+    by_category = []
+    for category, values in by_cat.items():
+        values.sort()
+        n = len(values)
+        by_category.append({
+            "category": category,
+            "sample_size": n,
+            "avg_minutes": round(sum(values) / n, 2),
+            "p50_minutes": round(_percentile_cont(values, 0.50), 2),
+        })
+    by_category.sort(key=lambda c: c["avg_minutes"], reverse=True)
+
     return {
-        "avg_hours": round(avg_hours, 2),
-        "p50_hours": round(p50_hours, 2),
-        "p95_hours": round(p95_hours, 2),
-        "max_hours": round(max_hours, 2),
+        "avg_minutes": round(avg_minutes, 2),
+        "p50_minutes": round(p50_minutes, 2),
+        "p95_minutes": round(p95_minutes, 2),
+        "max_minutes": round(max_minutes, 2),
         "sample_size": sample_size,
         "period_days": days,
         "histogram": histogram,
+        "by_category": by_category,
     }
 
 

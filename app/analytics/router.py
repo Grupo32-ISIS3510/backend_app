@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -14,6 +14,9 @@ from app.analytics.schemas import (
     DashboardResponse,
     EventsSummaryResponse,
     FavoritesDistributionResponse,
+    MarketProductTrendsResponse,
+    SavingsResponse,
+    SeedDemoResponse,
     InventoryEventsSummaryResponse,
     MarketProductTrendsResponse,
     MatchBucket,
@@ -219,9 +222,15 @@ def alert_response_times(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Tiempo entre una notificación de alerta y la primera acción del usuario
-    (consumir o descartar el ítem). Devuelve avg/p50/p95/max en horas más
-    un histograma con 4 buckets. Si la muestra es < 5, retorna ceros."""
+    """BQ T3.4 — Distribución del tiempo de respuesta a alertas de vencimiento.
+
+    Mide los minutos entre el envío de la alerta (notification_dispatches,
+    status='sent') y la primera acción del usuario sobre el ítem (consumed/
+    discarded). Solo incluye despachos que derivaron en acción posterior
+    (= "usuarios que toman acción"). Devuelve avg/p50/p95/max en minutos,
+    un histograma de 8 buckets (< 5 min ... > 24 h) y un desglose por
+    categoría (más lentas primero, candidatas a alertar con más anticipación).
+    Si la muestra global es < 5, devuelve ceros con arrays vacíos."""
     return analytics_service.get_alert_response_times(db, current_user.id, days)
 
 
