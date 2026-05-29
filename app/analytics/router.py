@@ -13,6 +13,7 @@ from app.analytics.schemas import (
     AnalyticsEventResponse,
     DashboardResponse,
     EventsSummaryResponse,
+    FavoritesDistributionResponse,
     MarketProductTrendsResponse,
     SavingsResponse,
     SeedDemoResponse,
@@ -23,9 +24,11 @@ from app.analytics.schemas import (
     RecipeInteractionsSummary,
     SavingsResponse,
     SeedDemoResponse,
+    SegmentsPatternsResponse,
     TopCookedRecipe,
     UserSegmentResponse,
     ViewsVsCooksRow,
+    WasteReductionByRecipeCategoryResponse,
     WasteSummaryResponse,
     WasteTrendItem,
 )
@@ -229,3 +232,55 @@ def alert_response_times(
     categoría (más lentas primero, candidatas a alertar con más anticipación).
     Si la muestra global es < 5, devuelve ceros con arrays vacíos."""
     return analytics_service.get_alert_response_times(db, current_user.id, days)
+
+
+# ── T3.2: Waste reduction by recipe category ────────────────────────────────
+
+@router.get(
+    "/waste-reduction-by-recipe-category",
+    response_model=WasteReductionByRecipeCategoryResponse,
+)
+def waste_reduction_by_recipe_category(
+    days: int = Query(30, ge=1, le=365),
+    rescue_window_days: int = Query(3, ge=1, le=14),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """T3.2 — Distribución del impacto de las recomendaciones de recetas en la
+    reducción de desperdicio, agrupada por categoría de receta.
+
+    Cuenta como "rescatado" un ítem que fue consumido al cocinar una receta y
+    estaba a ≤ `rescue_window_days` de su fecha de expiración. Cross-user.
+    """
+    return analytics_service.get_waste_reduction_by_recipe_category(
+        db, days=days, rescue_window_days=rescue_window_days
+    )
+
+
+# ── T3.6: Favorites distribution ─────────────────────────────────────────────
+
+@router.get("/favorites-distribution", response_model=FavoritesDistributionResponse)
+def favorites_distribution(
+    top_ingredients: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """T3.6 — Cómo se distribuyen las categorías de recetas e ingredientes
+    principales de las recetas marcadas como favoritas (cross-user, agregado)."""
+    return analytics_service.get_favorites_distribution(db, top_ingredients=top_ingredients)
+
+
+# ── T4.1: Segments behavioral patterns ───────────────────────────────────────
+
+@router.get("/segments/patterns", response_model=SegmentsPatternsResponse)
+def segments_patterns(
+    days: int = Query(30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """T4.1 — Patrones de comportamiento que distinguen usuarios Passive vs
+    Proactive (vs Neutral). Por cada segmento devuelve: # de usuarios, promedio
+    de recetas cocinadas, open rate de notificaciones, ítems registrados,
+    ítems desperdiciados, tiempo de respuesta a alertas, favoritos y top
+    features usadas."""
+    return analytics_service.get_segments_patterns(db, days=days)

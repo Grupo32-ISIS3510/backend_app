@@ -181,4 +181,67 @@ class AlertResponseTimesResponse(BaseModel):
     sample_size: int
     period_days: int
     histogram: list[AlertResponseBucket]
+
+
+# ── T3.2: Waste reduction by recipe category ────────────────────────────────
+
+class WasteReductionByRecipeCategoryItem(BaseModel):
+    recipe_category: Optional[str]
+    cooks: int                 # # de interacciones 'cooked' en la ventana
+    items_rescued: int         # ítems consumidos vía esa categoría dentro del umbral pre-vencimiento
+    items_consumed_total: int  # total de ítems consumidos vía esa categoría
+    value_rescued_cop: Decimal
+    rescue_rate: float         # items_rescued / items_consumed_total  (0..1)
+    unique_users: int
+
+
+class WasteReductionByRecipeCategoryResponse(BaseModel):
+    period_days: int
+    rescue_window_days: int    # un ítem cuenta como "rescatado" si fue consumido a ≤ N días de su expiry
+    total_cooks: int
+    total_items_rescued: int
+    total_value_rescued_cop: Decimal
+    by_category: list[WasteReductionByRecipeCategoryItem]
+
+
+# ── T3.6: Favorites distribution ─────────────────────────────────────────────
+
+class FavoriteCategoryItem(BaseModel):
+    category: Optional[str]
+    favorites_count: int
+    unique_users: int
+    pct_of_total: float        # 0..1
+
+
+class FavoriteIngredientItem(BaseModel):
+    ingredient_name: str
+    favorites_count: int       # # de favoritos que tienen este ingrediente
+    pct_of_total: float
+
+
+class FavoritesDistributionResponse(BaseModel):
+    total_favorites: int
+    unique_users: int
+    by_category: list[FavoriteCategoryItem]
+    top_ingredients: list[FavoriteIngredientItem]
+
+
+# ── T4.1: Segments behavioral patterns ───────────────────────────────────────
+
+class SegmentPatternItem(BaseModel):
+    segment: str               # 'passive' | 'neutral' | 'proactive'
+    user_count: int
+    avg_recipes_cooked: float
+    avg_notification_open_rate: float
+    avg_items_registered: float
+    avg_items_wasted: float
+    avg_alert_response_hours: Optional[float]
+    avg_favorites: float
+    top_features: list[str]    # features más usadas dentro del segmento
+
+
+class SegmentsPatternsResponse(BaseModel):
+    period_days: int
+    total_users_analyzed: int
+    segments: list[SegmentPatternItem]
     by_category: list[AlertResponseCategoryStat]

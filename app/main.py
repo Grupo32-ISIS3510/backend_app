@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.config import get_settings
@@ -28,6 +29,20 @@ app = FastAPI(
     version="0.1.0",
     docs_url="/docs",
     redoc_url="/redoc",
+)
+
+cors_origins = [
+    origin.strip()
+    for origin in settings.cors_origins.split(",")
+    if origin.strip()
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # ── Exception handlers ───────────────────────────────────────────────────────

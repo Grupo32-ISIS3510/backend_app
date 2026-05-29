@@ -4,12 +4,14 @@ import uuid
 
 from sqlalchemy.orm import Session, joinedload
 
-from app.recipes.models import Recipe, RecipeIngredient, RecipeInteraction
+from app.recipes.models import Recipe, RecipeIngredient, RecipeInteraction, RecipeFavorite
 from app.recipes.schemas import (
     RecipeDetailResponse,
     RecipeSummaryResponse,
     RecipeIngredientResponse,
     RecipeListResponse,
+    RecipeFavoriteItem,
+    RecipeFavoritesListResponse,
 )
 from app.inventory.models import InventoryItem, InventoryEvent
 from app.common.exceptions import AppException, ErrorCode
@@ -158,6 +160,7 @@ def interact(
                         event_type="consumed",
                         quantity=item.quantity,
                         unit_price=item.unit_price,
+                        recipe_id=recipe.id,  # T3.2: trazabilidad consumo→receta
                     )
                     db.add(event)
 
@@ -184,6 +187,66 @@ def list_recipes(
         items=[_build_summary(r, _compute_matches(r, all_active_names)) for r in recipes],
         total=total,
     )
+
+
+# ── T3.6 Favoritos ──────────────────────────────────────────────────────────
+
+def add_favorite(db: Session, user_id: uuid.UUID, recipe_id: uuid.UUID) -> RecipeFavoriteItem:
+    """Marca una receta como favorita. Idempotente: si ya estaba, devuelve la existente."""
+    recipe = _get_recipe_or_404(db, recipe_id)
+
+    existing = (
+        db.query(RecipeFavorite)
+        .filter(RecipeFavorite.user_id == user_id, RecipeFavorite.recipe_id == recipe_id)
+        .first()
+    )
+    if existing:
+        fav = existing
+    else:
+        fav = RecipeFavorite(user_id=user_id, recipe_id=recipe_id)
+        db.add(fav)
+        db.commit()
+        db.refresh(fav)
+
+    return RecipeFavoriteItem(
+        id=fav.id,
+        recipe_id=recipe.id,
+        name=recipe.name,
+        category=recipe.category,
+        image_url=recipe.image_url,
+        favorited_at=fav.favorited_at,
+    )
+
+
+def remove_favorite(db: Session, user_id: uuid.UUID, recipe_id: uuid.UUID) -> None:
+    """Quita la receta de favoritos. No falla si no estaba."""
+    db.query(RecipeFavorite).filter(
+        RecipeFavorite.user_id == user_id,
+        RecipeFavorite.recipe_id == recipe_id,
+    ).delete(synchronize_session=False)
+    db.commit()
+
+
+def list_favorites(db: Session, user_id: uuid.UUID) -> RecipeFavoritesListResponse:
+    rows = (
+        db.query(RecipeFavorite, Recipe)
+        .join(Recipe, Recipe.id == RecipeFavorite.recipe_id)
+        .filter(RecipeFavorite.user_id == user_id)
+        .order_by(RecipeFavorite.favorited_at.desc())
+        .all()
+    )
+    items = [
+        RecipeFavoriteItem(
+            id=fav.id,
+            recipe_id=recipe.id,
+            name=recipe.name,
+            category=recipe.category,
+            image_url=recipe.image_url,
+            favorited_at=fav.favorited_at,
+        )
+        for fav, recipe in rows
+    ]
+    return RecipeFavoritesListResponse(items=items, total=len(items))
 
 
 def seed_recipes(db: Session) -> int:
