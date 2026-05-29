@@ -222,10 +222,10 @@ class FavoritesDistributionResponse(BaseModel):
 class SegmentPatternItem(BaseModel):
     segment: str               # 'passive' | 'neutral' | 'proactive'
     user_count: int
-    avg_recipes_cooked_30d: float
+    avg_recipes_cooked: float
     avg_notification_open_rate: float
-    avg_items_registered_30d: float
-    avg_items_wasted_30d: float
+    avg_items_registered: float
+    avg_items_wasted: float
     avg_alert_response_hours: Optional[float]
     avg_favorites: float
     top_features: list[str]    # features más usadas dentro del segmento
