@@ -28,6 +28,70 @@ from app.analytics.schemas import (
 )
 
 
+# ── T4.2 seed constants ───────────────────────────────────────────────────────
+
+_DEMO_USERS = [
+    {"email": "demo_mercado_1@secondserving.demo", "full_name": "Ana García",       "location": "Bogotá"},
+    {"email": "demo_mercado_2@secondserving.demo", "full_name": "Carlos Rodríguez", "location": "Medellín"},
+    {"email": "demo_mercado_3@secondserving.demo", "full_name": "María López",      "location": "Cali"},
+    {"email": "demo_mercado_4@secondserving.demo", "full_name": "José Martínez",    "location": "Barranquilla"},
+    {"email": "demo_mercado_5@secondserving.demo", "full_name": "Laura Hernández",  "location": "Bucaramanga"},
+    {"email": "demo_mercado_6@secondserving.demo", "full_name": "Diego Vargas",     "location": "Cartagena"},
+]
+
+# name → (category, unit, unit_price_cop)
+_CATALOG: dict[str, tuple[str, str, int]] = {
+    "Leche":            ("Lácteos",    "litros",    3_500),
+    "Queso Campesino":  ("Lácteos",    "kg",       18_000),
+    "Yogur Natural":    ("Lácteos",    "unidades",  4_500),
+    "Mantequilla":      ("Lácteos",    "kg",       22_000),
+    "Huevos":           ("Proteínas",  "unidades",    800),
+    "Pechuga de Pollo": ("Proteínas",  "kg",       15_000),
+    "Atún en Lata":     ("Proteínas",  "unidades",  6_500),
+    "Lenteja":          ("Proteínas",  "kg",        5_200),
+    "Arroz Blanco":     ("Cereales",   "kg",        4_200),
+    "Avena":            ("Cereales",   "kg",        5_600),
+    "Pan Tajado":       ("Cereales",   "unidades",  7_000),
+    "Banano":           ("Frutas",     "kg",        2_800),
+    "Manzana":          ("Frutas",     "kg",        6_500),
+    "Naranja":          ("Frutas",     "kg",        3_500),
+    "Tomate":           ("Verduras",   "kg",        4_500),
+    "Cebolla":          ("Verduras",   "kg",        3_800),
+    "Lechuga":          ("Verduras",   "unidades",  3_000),
+    "Zanahoria":        ("Verduras",   "kg",        3_200),
+    "Papa":             ("Verduras",   "kg",        2_800),
+    "Aceite de Cocina": ("Abarrotes",  "litros",   12_000),
+    "Azúcar":           ("Abarrotes",  "kg",        3_500),
+    "Café Molido":      ("Bebidas",    "kg",       28_000),
+    "Jugo de Naranja":  ("Bebidas",    "litros",    5_500),
+    "Agua Mineral":     ("Bebidas",    "litros",    2_000),
+}
+
+# list of (product_name, times_bought) per demo user (same order as _DEMO_USERS)
+_USER_PURCHASES: list[list[tuple[str, int]]] = [
+    # Ana García – compras familiares típicas
+    [("Leche", 3), ("Arroz Blanco", 3), ("Huevos", 3), ("Tomate", 2),
+     ("Banano", 2), ("Pan Tajado", 2), ("Queso Campesino", 2), ("Café Molido", 2),
+     ("Aceite de Cocina", 1), ("Lechuga", 1)],
+    # Carlos Rodríguez – dieta alta en proteínas
+    [("Leche", 2), ("Arroz Blanco", 2), ("Pechuga de Pollo", 3), ("Zanahoria", 2),
+     ("Papa", 3), ("Lenteja", 2), ("Avena", 1), ("Manzana", 2), ("Huevos", 2)],
+    # María López – frutas y verduras
+    [("Yogur Natural", 2), ("Leche", 2), ("Banano", 3), ("Naranja", 2),
+     ("Tomate", 3), ("Cebolla", 2), ("Arroz Blanco", 2), ("Azúcar", 2), ("Manzana", 1)],
+    # José Martínez – soltero, productos prácticos
+    [("Huevos", 3), ("Atún en Lata", 2), ("Arroz Blanco", 3), ("Pan Tajado", 3),
+     ("Café Molido", 3), ("Jugo de Naranja", 2), ("Agua Mineral", 2), ("Leche", 1)],
+    # Laura Hernández – amante de los lácteos
+    [("Leche", 3), ("Queso Campesino", 3), ("Mantequilla", 2), ("Arroz Blanco", 2),
+     ("Papa", 2), ("Cebolla", 3), ("Tomate", 2), ("Manzana", 2), ("Yogur Natural", 1)],
+    # Diego Vargas – dieta costeña
+    [("Pechuga de Pollo", 2), ("Huevos", 2), ("Arroz Blanco", 3), ("Banano", 2),
+     ("Naranja", 3), ("Agua Mineral", 3), ("Aceite de Cocina", 2), ("Azúcar", 2),
+     ("Lenteja", 1)],
+]
+
+
 def record_events(
     db: Session, user_id: uuid.UUID, batch: AnalyticsEventBatch
 ) -> AnalyticsEventResponse:

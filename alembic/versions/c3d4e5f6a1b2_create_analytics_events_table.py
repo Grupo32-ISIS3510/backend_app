@@ -11,6 +11,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
+# revision identifiers, used by Alembic.
 revision: str = 'c3d4e5f6a1b2'
 down_revision: Union[str, None] = 'b2c3d4e5f6a1'
 branch_labels: Union[str, Sequence[str], None] = None
@@ -29,7 +30,7 @@ def upgrade() -> None:
         sa.Column('app_version', sa.String(length=20), nullable=True),
         sa.Column('occurred_at', sa.DateTime(), nullable=False),
         sa.Column('received_at', sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(['user_id'], ['users.id']),
+        sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('id'),
     )
 

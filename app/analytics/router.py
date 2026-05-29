@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -13,6 +13,9 @@ from app.analytics.schemas import (
     AnalyticsEventResponse,
     DashboardResponse,
     EventsSummaryResponse,
+    MarketProductTrendsResponse,
+    SavingsResponse,
+    SeedDemoResponse,
     InventoryEventsSummaryResponse,
     MarketProductTrendsResponse,
     MatchBucket,

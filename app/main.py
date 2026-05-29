@@ -70,6 +70,19 @@ scheduler.add_job(
 scheduler.start()
 
 
+@app.on_event("startup")
+def create_missing_tables():
+    """Auto-create any tables that Alembic hasn't migrated yet.
+    Uses IF NOT EXISTS internally — safe to run on every startup."""
+    # Import all models so Base.metadata knows about them
+    import app.auth.models        # noqa: F401
+    import app.inventory.models   # noqa: F401
+    import app.analytics.models   # noqa: F401
+    import app.telemetry.models   # noqa: F401
+    from app.database import Base, engine
+    Base.metadata.create_all(bind=engine)
+
+
 @app.on_event("shutdown")
 def shutdown_scheduler():
     scheduler.shutdown()

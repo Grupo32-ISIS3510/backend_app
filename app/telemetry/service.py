@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.telemetry.models import ScanEvent, ExpiryAccuracyEvent, ScreenEvent
 from app.telemetry.models import (
     ScanEvent,
     ExpiryAccuracyEvent,
