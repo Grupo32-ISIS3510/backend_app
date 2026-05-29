@@ -928,7 +928,8 @@ def get_waste_reduction_by_recipe_category(
             COALESCE(cv.items_consumed_total, 0)            AS items_consumed_total,
             COALESCE(cv.value_rescued_cop, 0)               AS value_rescued_cop
         FROM cooks_in_window c
-        FULL OUTER JOIN consumed_via_recipe cv USING (recipe_category)
+        FULL OUTER JOIN consumed_via_recipe cv
+          ON c.recipe_category IS NOT DISTINCT FROM cv.recipe_category
         ORDER BY items_rescued DESC, cooks DESC;
     """)
     rows = db.execute(sql, {"days": days, "rescue_window": rescue_window_days}).mappings().all()
