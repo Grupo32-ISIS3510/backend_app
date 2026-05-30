@@ -181,6 +181,7 @@ class AlertResponseTimesResponse(BaseModel):
     sample_size: int
     period_days: int
     histogram: list[AlertResponseBucket]
+    by_category: list[AlertResponseCategoryStat]
 
 
 # ── T3.2: Waste reduction by recipe category ────────────────────────────────
@@ -229,19 +230,18 @@ class FavoritesDistributionResponse(BaseModel):
 # ── T4.1: Segments behavioral patterns ───────────────────────────────────────
 
 class SegmentPatternItem(BaseModel):
-    segment: str               # 'passive' | 'neutral' | 'proactive'
+    segment: str                     # 'passive' | 'neutral' | 'proactive'
     user_count: int
-    avg_recipes_cooked: float
+    avg_recipes_cooked_30d: float
     avg_notification_open_rate: float
-    avg_items_registered: float
-    avg_items_wasted: float
+    avg_items_registered_30d: float
+    avg_items_wasted_30d: float
     avg_alert_response_hours: Optional[float]
     avg_favorites: float
-    top_features: list[str]    # features más usadas dentro del segmento
+    top_features: list[str]          # features más usadas dentro del segmento
 
 
 class SegmentsPatternsResponse(BaseModel):
     period_days: int
     total_users_analyzed: int
     segments: list[SegmentPatternItem]
-    by_category: list[AlertResponseCategoryStat]
