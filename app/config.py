@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     # Entorno
     app_env: str = "development"
     app_name: str = "Second Serving Backend"
+    cors_origins: str = ""
 
     # Notificaciones
     notifications_scheduler_hours: int = 1

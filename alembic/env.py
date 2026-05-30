@@ -6,6 +6,7 @@ from app.database import Base
 
 # Se importan todos los modelos aquí para que Alembic los detecte
 from app.auth.models import User
+from app.analytics.models import AnalyticsEvent
 from app.inventory.models import InventoryItem, InventoryEvent
 from app.notifications.models import DeviceToken, NotificationPreference, NotificationDispatch
 from app.recipes.models import Recipe, RecipeIngredient, RecipeInteraction

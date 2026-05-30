@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 
 from app.config import get_settings
@@ -28,6 +29,20 @@ app = FastAPI(
     version="0.1.0",
     docs_url="/docs",
     redoc_url="/redoc",
+)
+
+cors_origins = [
+    origin.strip()
+    for origin in settings.cors_origins.split(",")
+    if origin.strip()
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # ── Exception handlers ───────────────────────────────────────────────────────
@@ -68,6 +83,19 @@ scheduler.add_job(
     hours=max(1, settings.notifications_scheduler_hours),
 )
 scheduler.start()
+
+
+@app.on_event("startup")
+def create_missing_tables():
+    """Auto-create any tables that Alembic hasn't migrated yet.
+    Uses IF NOT EXISTS internally — safe to run on every startup."""
+    # Import all models so Base.metadata knows about them
+    import app.auth.models        # noqa: F401
+    import app.inventory.models   # noqa: F401
+    import app.analytics.models   # noqa: F401
+    import app.telemetry.models   # noqa: F401
+    from app.database import Base, engine
+    Base.metadata.create_all(bind=engine)
 
 
 @app.on_event("shutdown")

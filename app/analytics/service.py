@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.auth.models import User
 from app.inventory.models import InventoryEvent, InventoryItem
-from app.recipes.models import RecipeInteraction
+from app.recipes.models import Recipe, RecipeIngredient, RecipeInteraction, RecipeFavorite
+from app.telemetry.models import FeatureUsageEvent
 from app.analytics.models import AnalyticsEvent
 from app.analytics.schemas import (
     AnalyticsEventBatch,
@@ -18,14 +19,85 @@ from app.analytics.schemas import (
     DashboardResponse,
     EventCount,
     EventsSummaryResponse,
+    FavoriteCategoryItem,
+    FavoriteIngredientItem,
+    FavoritesDistributionResponse,
     MarketProductTrendsResponse,
     ProductTrendItem,
     SavingsResponse,
     SeedDemoResponse,
+    SegmentPatternItem,
+    SegmentsPatternsResponse,
     UserSegmentResponse,
+    WasteReductionByRecipeCategoryItem,
+    WasteReductionByRecipeCategoryResponse,
     WasteSummaryResponse,
     WasteTrendItem,
 )
+
+
+# ── T4.2 seed constants ───────────────────────────────────────────────────────
+
+_DEMO_USERS = [
+    {"email": "demo_mercado_1@secondserving.demo", "full_name": "Ana García",       "location": "Bogotá"},
+    {"email": "demo_mercado_2@secondserving.demo", "full_name": "Carlos Rodríguez", "location": "Medellín"},
+    {"email": "demo_mercado_3@secondserving.demo", "full_name": "María López",      "location": "Cali"},
+    {"email": "demo_mercado_4@secondserving.demo", "full_name": "José Martínez",    "location": "Barranquilla"},
+    {"email": "demo_mercado_5@secondserving.demo", "full_name": "Laura Hernández",  "location": "Bucaramanga"},
+    {"email": "demo_mercado_6@secondserving.demo", "full_name": "Diego Vargas",     "location": "Cartagena"},
+]
+
+# name → (category, unit, unit_price_cop)
+_CATALOG: dict[str, tuple[str, str, int]] = {
+    "Leche":            ("Lácteos",    "litros",    3_500),
+    "Queso Campesino":  ("Lácteos",    "kg",       18_000),
+    "Yogur Natural":    ("Lácteos",    "unidades",  4_500),
+    "Mantequilla":      ("Lácteos",    "kg",       22_000),
+    "Huevos":           ("Proteínas",  "unidades",    800),
+    "Pechuga de Pollo": ("Proteínas",  "kg",       15_000),
+    "Atún en Lata":     ("Proteínas",  "unidades",  6_500),
+    "Lenteja":          ("Proteínas",  "kg",        5_200),
+    "Arroz Blanco":     ("Cereales",   "kg",        4_200),
+    "Avena":            ("Cereales",   "kg",        5_600),
+    "Pan Tajado":       ("Cereales",   "unidades",  7_000),
+    "Banano":           ("Frutas",     "kg",        2_800),
+    "Manzana":          ("Frutas",     "kg",        6_500),
+    "Naranja":          ("Frutas",     "kg",        3_500),
+    "Tomate":           ("Verduras",   "kg",        4_500),
+    "Cebolla":          ("Verduras",   "kg",        3_800),
+    "Lechuga":          ("Verduras",   "unidades",  3_000),
+    "Zanahoria":        ("Verduras",   "kg",        3_200),
+    "Papa":             ("Verduras",   "kg",        2_800),
+    "Aceite de Cocina": ("Abarrotes",  "litros",   12_000),
+    "Azúcar":           ("Abarrotes",  "kg",        3_500),
+    "Café Molido":      ("Bebidas",    "kg",       28_000),
+    "Jugo de Naranja":  ("Bebidas",    "litros",    5_500),
+    "Agua Mineral":     ("Bebidas",    "litros",    2_000),
+}
+
+# list of (product_name, times_bought) per demo user (same order as _DEMO_USERS)
+_USER_PURCHASES: list[list[tuple[str, int]]] = [
+    # Ana García – compras familiares típicas
+    [("Leche", 3), ("Arroz Blanco", 3), ("Huevos", 3), ("Tomate", 2),
+     ("Banano", 2), ("Pan Tajado", 2), ("Queso Campesino", 2), ("Café Molido", 2),
+     ("Aceite de Cocina", 1), ("Lechuga", 1)],
+    # Carlos Rodríguez – dieta alta en proteínas
+    [("Leche", 2), ("Arroz Blanco", 2), ("Pechuga de Pollo", 3), ("Zanahoria", 2),
+     ("Papa", 3), ("Lenteja", 2), ("Avena", 1), ("Manzana", 2), ("Huevos", 2)],
+    # María López – frutas y verduras
+    [("Yogur Natural", 2), ("Leche", 2), ("Banano", 3), ("Naranja", 2),
+     ("Tomate", 3), ("Cebolla", 2), ("Arroz Blanco", 2), ("Azúcar", 2), ("Manzana", 1)],
+    # José Martínez – soltero, productos prácticos
+    [("Huevos", 3), ("Atún en Lata", 2), ("Arroz Blanco", 3), ("Pan Tajado", 3),
+     ("Café Molido", 3), ("Jugo de Naranja", 2), ("Agua Mineral", 2), ("Leche", 1)],
+    # Laura Hernández – amante de los lácteos
+    [("Leche", 3), ("Queso Campesino", 3), ("Mantequilla", 2), ("Arroz Blanco", 2),
+     ("Papa", 2), ("Cebolla", 3), ("Tomate", 2), ("Manzana", 2), ("Yogur Natural", 1)],
+    # Diego Vargas – dieta costeña
+    [("Pechuga de Pollo", 2), ("Huevos", 2), ("Arroz Blanco", 3), ("Banano", 2),
+     ("Naranja", 3), ("Agua Mineral", 3), ("Aceite de Cocina", 2), ("Azúcar", 2),
+     ("Lenteja", 1)],
+]
 
 
 def record_events(
@@ -796,18 +868,52 @@ def _percentile_cont(sorted_values: list[float], p: float) -> float:
 def get_alert_response_times(
     db: Session, user_id: uuid.UUID, days: int = 30
 ) -> dict:
-    """Tiempo (en horas) entre una notificación de alerta y la primera acción del usuario
-    sobre el ítem referenciado (consumed/discarded). Solo cuenta deltas positivos.
+    """Distribución del tiempo (en minutos) entre el envío de una alerta de
+    vencimiento (notification_dispatches con status='sent') y la primera acción
+    del usuario sobre el ítem (consumed/discarded). Solo cuenta despachos que
+    derivaron en una acción posterior: equivale a "usuarios que toman acción".
 
-    Si la muestra es menor a 5, devuelve ceros con histograma vacío
-    (datos insuficientes — no se considera error).
+    Toma el primer despacho por ítem para no inflar la muestra cuando un ítem
+    recibe alertas en días consecutivos. Devuelve avg/p50/p95/max en minutos,
+    un histograma de 8 buckets y un desglose por categoría (más lentas primero,
+    candidatas a alertar con más anticipación).
+
+    Si la muestra global es menor a 5, devuelve ceros con arrays vacíos
+    (datos insuficientes, no se considera error).
     """
-    deltas_sql = text("""
+    rows_sql = text("""
+        WITH first_dispatch AS (
+            SELECT nd.item_id, MIN(nd.created_at) AS first_alert_at
+            FROM notification_dispatches nd
+            WHERE nd.user_id = :user_id
+              AND nd.notification_type = 'expiry_alert'
+              AND nd.status = 'sent'
+              AND nd.item_id IS NOT NULL
+              AND nd.created_at > NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
+            GROUP BY nd.item_id
+        )
         SELECT
-            EXTRACT(EPOCH FROM (next_action.first_action_at - notif.occurred_at)) / 3600.0
-                AS hours
-        FROM analytics_events notif
+            COALESCE(ii.category, 'Sin categoría') AS category,
+            EXTRACT(EPOCH FROM (act.first_action_at - fd.first_alert_at)) / 60.0
+                AS minutes
+        FROM first_dispatch fd
+        JOIN inventory_items ii ON ii.id = fd.item_id
         CROSS JOIN LATERAL (
+            SELECT MIN(occurred_at) AS first_action_at
+            FROM inventory_events
+            WHERE user_id = :user_id
+              AND item_id = (notif.properties->>'item_id')::uuid
+              AND event_type IN ('consumed', 'discarded')
+              AND occurred_at > notif.occurred_at
+        ) next_action
+        WHERE notif.user_id = :user_id
+          AND notif.event_name IN ('notification_received', 'notification_opened')
+          AND notif.occurred_at > NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
+          AND notif.properties::jsonb ? 'item_id'
+          AND (notif.properties->>'item_id')
+              ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          AND next_action.first_action_at IS NOT NULL
+          AND next_action.first_action_at > notif.occurred_at;
             SELECT MIN(ie.occurred_at) AS first_action_at
             FROM inventory_events ie
             WHERE ie.user_id = :user_id
@@ -818,46 +924,460 @@ def get_alert_response_times(
         WHERE act.first_action_at IS NOT NULL;
     """)
 
-    rows = db.execute(deltas_sql, {"user_id": str(user_id), "days": days}).all()
-    deltas = sorted(float(r[0]) for r in rows if r[0] is not None and float(r[0]) > 0)
+    rows = db.execute(rows_sql, {"user_id": str(user_id), "days": days}).all()
+    pairs = [
+        (r[0], float(r[1]))
+        for r in rows
+        if r[1] is not None and float(r[1]) > 0
+    ]
+    deltas = sorted(minutes for _, minutes in pairs)
     sample_size = len(deltas)
 
     if sample_size < 5:
         return {
-            "avg_hours": 0.0,
-            "p50_hours": 0.0,
-            "p95_hours": 0.0,
-            "max_hours": 0.0,
+            "avg_minutes": 0.0,
+            "p50_minutes": 0.0,
+            "p95_minutes": 0.0,
+            "max_minutes": 0.0,
             "sample_size": sample_size,
             "period_days": days,
             "histogram": [],
+            "by_category": [],
         }
 
-    avg_hours = sum(deltas) / sample_size
-    p50_hours = _percentile_cont(deltas, 0.50)
-    p95_hours = _percentile_cont(deltas, 0.95)
-    max_hours = deltas[-1]
+    avg_minutes = sum(deltas) / sample_size
+    p50_minutes = _percentile_cont(deltas, 0.50)
+    p95_minutes = _percentile_cont(deltas, 0.95)
+    max_minutes = deltas[-1]
 
     buckets = [
-        ("< 1h",   lambda d: d < 1),
-        ("1\u20136h",  lambda d: 1 <= d < 6),
-        ("6\u201324h", lambda d: 6 <= d < 24),
-        ("> 24h",  lambda d: d >= 24),
+        ("< 5 min",   lambda d: d < 5),
+        ("5\u201315 min",  lambda d: 5 <= d < 15),
+        ("15\u201330 min", lambda d: 15 <= d < 30),
+        ("30\u201360 min", lambda d: 30 <= d < 60),
+        ("1\u20133 h",     lambda d: 60 <= d < 180),
+        ("3\u20136 h",     lambda d: 180 <= d < 360),
+        ("6\u201324 h",    lambda d: 360 <= d < 1440),
+        ("> 24 h",    lambda d: d >= 1440),
     ]
     histogram = [
         {"bucket": label, "count": sum(1 for d in deltas if pred(d))}
         for label, pred in buckets
     ]
 
+    by_cat: dict[str, list[float]] = {}
+    for category, minutes in pairs:
+        by_cat.setdefault(category, []).append(minutes)
+
+    by_category = []
+    for category, values in by_cat.items():
+        values.sort()
+        n = len(values)
+        by_category.append({
+            "category": category,
+            "sample_size": n,
+            "avg_minutes": round(sum(values) / n, 2),
+            "p50_minutes": round(_percentile_cont(values, 0.50), 2),
+        })
+    by_category.sort(key=lambda c: c["avg_minutes"], reverse=True)
+
     return {
-        "avg_hours": round(avg_hours, 2),
-        "p50_hours": round(p50_hours, 2),
-        "p95_hours": round(p95_hours, 2),
-        "max_hours": round(max_hours, 2),
+        "avg_minutes": round(avg_minutes, 2),
+        "p50_minutes": round(p50_minutes, 2),
+        "p95_minutes": round(p95_minutes, 2),
+        "max_minutes": round(max_minutes, 2),
         "sample_size": sample_size,
         "period_days": days,
         "histogram": histogram,
+        "by_category": by_category,
     }
+
+
+# ── T3.2: Waste reduction by recipe category ────────────────────────────────
+
+def get_waste_reduction_by_recipe_category(
+    db: Session, days: int = 30, rescue_window_days: int = 3
+) -> WasteReductionByRecipeCategoryResponse:
+    """T3.2 — Impacto de las recomendaciones de recetas en la reducción de desperdicio,
+    agrupado por categoría de receta.
+
+    Un ítem cuenta como "rescatado" si fue consumido por una receta (inventory_event
+    con recipe_id no nulo) y la fecha de consumo estuvo a ≤ `rescue_window_days`
+    de la fecha de expiración del ítem.
+    """
+    sql = text("""
+        WITH cooks_in_window AS (
+            SELECT
+                r.category                              AS recipe_category,
+                COUNT(*)                                AS cooks,
+                COUNT(DISTINCT ri.user_id)              AS unique_users
+            FROM recipe_interactions ri
+            JOIN recipes r ON r.id = ri.recipe_id
+            WHERE ri.action = 'cooked'
+              AND ri.occurred_at > NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
+            GROUP BY r.category
+        ),
+        consumed_via_recipe AS (
+            SELECT
+                r.category                              AS recipe_category,
+                COUNT(ie.id)                            AS items_consumed_total,
+                COUNT(ie.id) FILTER (
+                    WHERE (i.expiry_date - ie.occurred_at::date)
+                          BETWEEN 0 AND CAST(:rescue_window AS INTEGER)
+                )                                       AS items_rescued,
+                COALESCE(SUM(
+                    CASE WHEN (i.expiry_date - ie.occurred_at::date)
+                              BETWEEN 0 AND CAST(:rescue_window AS INTEGER)
+                         THEN ie.quantity * ie.unit_price ELSE 0 END
+                ), 0)                                   AS value_rescued_cop
+            FROM inventory_events ie
+            JOIN inventory_items i ON i.id = ie.item_id
+            JOIN recipes r ON r.id = ie.recipe_id
+            WHERE ie.event_type = 'consumed'
+              AND ie.recipe_id IS NOT NULL
+              AND ie.occurred_at > NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
+            GROUP BY r.category
+        )
+        SELECT
+            COALESCE(c.recipe_category, cv.recipe_category) AS recipe_category,
+            COALESCE(c.cooks, 0)                            AS cooks,
+            COALESCE(c.unique_users, 0)                     AS unique_users,
+            COALESCE(cv.items_rescued, 0)                   AS items_rescued,
+            COALESCE(cv.items_consumed_total, 0)            AS items_consumed_total,
+            COALESCE(cv.value_rescued_cop, 0)               AS value_rescued_cop
+        FROM cooks_in_window c
+        FULL OUTER JOIN consumed_via_recipe cv
+          ON c.recipe_category IS NOT DISTINCT FROM cv.recipe_category
+        ORDER BY items_rescued DESC, cooks DESC;
+    """)
+    rows = db.execute(sql, {"days": days, "rescue_window": rescue_window_days}).mappings().all()
+
+    items: list[WasteReductionByRecipeCategoryItem] = []
+    total_cooks = 0
+    total_rescued = 0
+    total_value = Decimal("0")
+
+    for row in rows:
+        consumed_total = int(row["items_consumed_total"] or 0)
+        rescued = int(row["items_rescued"] or 0)
+        cooks = int(row["cooks"] or 0)
+        value = Decimal(str(row["value_rescued_cop"] or 0))
+
+        rescue_rate = round(rescued / consumed_total, 4) if consumed_total > 0 else 0.0
+
+        items.append(WasteReductionByRecipeCategoryItem(
+            recipe_category=row["recipe_category"],
+            cooks=cooks,
+            items_rescued=rescued,
+            items_consumed_total=consumed_total,
+            value_rescued_cop=value,
+            rescue_rate=rescue_rate,
+            unique_users=int(row["unique_users"] or 0),
+        ))
+        total_cooks += cooks
+        total_rescued += rescued
+        total_value += value
+
+    return WasteReductionByRecipeCategoryResponse(
+        period_days=days,
+        rescue_window_days=rescue_window_days,
+        total_cooks=total_cooks,
+        total_items_rescued=total_rescued,
+        total_value_rescued_cop=total_value,
+        by_category=items,
+    )
+
+
+# ── T3.6: Favorites distribution ─────────────────────────────────────────────
+
+def get_favorites_distribution(
+    db: Session, top_ingredients: int = 10
+) -> FavoritesDistributionResponse:
+    """T3.6 — Cómo se distribuyen las categorías y los ingredientes principales
+    de las recetas que los usuarios marcan como favoritas (cross-user, agregado).
+    """
+    total_favorites = db.query(func.count(RecipeFavorite.id)).scalar() or 0
+    unique_users = (
+        db.query(func.count(func.distinct(RecipeFavorite.user_id))).scalar() or 0
+    )
+
+    if total_favorites == 0:
+        return FavoritesDistributionResponse(
+            total_favorites=0,
+            unique_users=0,
+            by_category=[],
+            top_ingredients=[],
+        )
+
+    cat_rows = (
+        db.query(
+            Recipe.category.label("category"),
+            func.count(RecipeFavorite.id).label("favorites_count"),
+            func.count(func.distinct(RecipeFavorite.user_id)).label("unique_users"),
+        )
+        .join(Recipe, Recipe.id == RecipeFavorite.recipe_id)
+        .group_by(Recipe.category)
+        .order_by(func.count(RecipeFavorite.id).desc())
+        .all()
+    )
+
+    by_category = [
+        FavoriteCategoryItem(
+            category=row.category,
+            favorites_count=row.favorites_count,
+            unique_users=row.unique_users,
+            pct_of_total=round(row.favorites_count / total_favorites, 4),
+        )
+        for row in cat_rows
+    ]
+
+    # Top ingredientes: contar cuántos favoritos contienen cada ingrediente.
+    ing_rows = (
+        db.query(
+            func.lower(RecipeIngredient.ingredient_name).label("ingredient_name"),
+            func.count(RecipeFavorite.id).label("favorites_count"),
+        )
+        .join(RecipeFavorite, RecipeFavorite.recipe_id == RecipeIngredient.recipe_id)
+        .group_by(func.lower(RecipeIngredient.ingredient_name))
+        .order_by(func.count(RecipeFavorite.id).desc())
+        .limit(top_ingredients)
+        .all()
+    )
+
+    top_ing = [
+        FavoriteIngredientItem(
+            ingredient_name=row.ingredient_name,
+            favorites_count=row.favorites_count,
+            pct_of_total=round(row.favorites_count / total_favorites, 4),
+        )
+        for row in ing_rows
+    ]
+
+    return FavoritesDistributionResponse(
+        total_favorites=total_favorites,
+        unique_users=unique_users,
+        by_category=by_category,
+        top_ingredients=top_ing,
+    )
+
+
+# ── T4.1: Segments behavioral patterns ───────────────────────────────────────
+
+def _classify_segment(open_rate: float, recipes_cooked: int) -> str:
+    if open_rate >= 0.6 and recipes_cooked >= 3:
+        return "proactive"
+    if open_rate < 0.2 and recipes_cooked == 0:
+        return "passive"
+    return "neutral"
+
+
+def get_segments_patterns(db: Session, days: int = 30) -> SegmentsPatternsResponse:
+    """T4.1 — Patrones de comportamiento que distinguen usuarios Passive vs Proactive.
+
+    Clasifica a todos los usuarios con actividad reciente en uno de 3 segmentos
+    y reporta, por segmento, métricas comparativas (recetas cocinadas, open rate
+    de notificaciones, registros de inventario, ítems desperdiciados, tiempo de
+    respuesta a alertas, favoritos, features más usadas).
+    """
+    since = datetime.utcnow() - timedelta(days=days)
+
+    # Universo: usuarios con CUALQUIER actividad en la ventana.
+    activity_user_ids = set()
+    for q in [
+        db.query(func.distinct(RecipeInteraction.user_id))
+            .filter(RecipeInteraction.occurred_at >= since),
+        db.query(func.distinct(AnalyticsEvent.user_id))
+            .filter(AnalyticsEvent.occurred_at >= since),
+        db.query(func.distinct(InventoryEvent.user_id))
+            .filter(InventoryEvent.occurred_at >= since),
+    ]:
+        for (uid,) in q.all():
+            if uid is not None:
+                activity_user_ids.add(uid)
+
+    if not activity_user_ids:
+        return SegmentsPatternsResponse(
+            period_days=days,
+            total_users_analyzed=0,
+            segments=[],
+        )
+
+    # Pre-cómputo por usuario.
+    cooked_rows = dict(
+        db.query(RecipeInteraction.user_id, func.count(RecipeInteraction.id))
+        .filter(
+            RecipeInteraction.user_id.in_(activity_user_ids),
+            RecipeInteraction.action == "cooked",
+            RecipeInteraction.occurred_at >= since,
+        )
+        .group_by(RecipeInteraction.user_id)
+        .all()
+    )
+    notif_recv = dict(
+        db.query(AnalyticsEvent.user_id, func.count(AnalyticsEvent.id))
+        .filter(
+            AnalyticsEvent.user_id.in_(activity_user_ids),
+            AnalyticsEvent.event_name == "notification_received",
+            AnalyticsEvent.occurred_at >= since,
+        )
+        .group_by(AnalyticsEvent.user_id)
+        .all()
+    )
+    notif_open = dict(
+        db.query(AnalyticsEvent.user_id, func.count(AnalyticsEvent.id))
+        .filter(
+            AnalyticsEvent.user_id.in_(activity_user_ids),
+            AnalyticsEvent.event_name == "notification_opened",
+            AnalyticsEvent.occurred_at >= since,
+        )
+        .group_by(AnalyticsEvent.user_id)
+        .all()
+    )
+    items_registered = dict(
+        db.query(InventoryEvent.user_id, func.count(InventoryEvent.id))
+        .filter(
+            InventoryEvent.user_id.in_(activity_user_ids),
+            InventoryEvent.event_type == "registered",
+            InventoryEvent.occurred_at >= since,
+        )
+        .group_by(InventoryEvent.user_id)
+        .all()
+    )
+    items_wasted = dict(
+        db.query(InventoryEvent.user_id, func.count(InventoryEvent.id))
+        .filter(
+            InventoryEvent.user_id.in_(activity_user_ids),
+            InventoryEvent.event_type == "discarded",
+            InventoryEvent.occurred_at >= since,
+        )
+        .group_by(InventoryEvent.user_id)
+        .all()
+    )
+    favorites_count = dict(
+        db.query(RecipeFavorite.user_id, func.count(RecipeFavorite.id))
+        .filter(RecipeFavorite.user_id.in_(activity_user_ids))
+        .group_by(RecipeFavorite.user_id)
+        .all()
+    )
+
+    # Features por usuario (mapa: user_id -> {feature: count}).
+    feature_rows = (
+        db.query(
+            FeatureUsageEvent.user_id,
+            FeatureUsageEvent.feature,
+            func.count(FeatureUsageEvent.id).label("cnt"),
+        )
+        .filter(
+            FeatureUsageEvent.user_id.in_(activity_user_ids),
+            FeatureUsageEvent.timestamp >= since,
+        )
+        .group_by(FeatureUsageEvent.user_id, FeatureUsageEvent.feature)
+        .all()
+    )
+    features_by_user: dict = defaultdict(dict)
+    for uid, feat, cnt in feature_rows:
+        features_by_user[uid][feat] = cnt
+
+    # Alert response times por usuario.
+    alert_response_avg = {}
+    deltas_sql = text("""
+        SELECT
+            notif.user_id,
+            EXTRACT(EPOCH FROM (next_action.first_action_at - notif.occurred_at)) / 3600.0
+                AS hours
+        FROM analytics_events notif
+        CROSS JOIN LATERAL (
+            SELECT MIN(occurred_at) AS first_action_at
+            FROM inventory_events
+            WHERE user_id = notif.user_id
+              AND item_id = (notif.properties->>'item_id')::uuid
+              AND event_type IN ('consumed', 'discarded')
+              AND occurred_at > notif.occurred_at
+        ) next_action
+        WHERE notif.event_name IN ('notification_received', 'notification_opened')
+          AND notif.occurred_at > NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
+          AND notif.properties::jsonb ? 'item_id'
+          AND (notif.properties->>'item_id')
+              ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+          AND next_action.first_action_at > notif.occurred_at;
+    """)
+    delta_rows = db.execute(deltas_sql, {"days": days}).all()
+    per_user_deltas: dict = defaultdict(list)
+    for uid, h in delta_rows:
+        if h is not None and float(h) > 0:
+            per_user_deltas[uid].append(float(h))
+    for uid, vals in per_user_deltas.items():
+        alert_response_avg[uid] = sum(vals) / len(vals)
+
+    # Agrupar usuarios por segmento.
+    buckets: dict[str, list] = {"passive": [], "neutral": [], "proactive": []}
+    for uid in activity_user_ids:
+        cooked = int(cooked_rows.get(uid, 0))
+        recv = int(notif_recv.get(uid, 0))
+        opened = int(notif_open.get(uid, 0))
+        open_rate = (opened / recv) if recv > 0 else 0.0
+        segment = _classify_segment(open_rate, cooked)
+        buckets[segment].append({
+            "user_id": uid,
+            "cooked": cooked,
+            "open_rate": open_rate,
+            "registered": int(items_registered.get(uid, 0)),
+            "wasted": int(items_wasted.get(uid, 0)),
+            "favorites": int(favorites_count.get(uid, 0)),
+            "alert_h": alert_response_avg.get(uid),
+        })
+
+    segments_out: list[SegmentPatternItem] = []
+    for seg in ("passive", "neutral", "proactive"):
+        users = buckets[seg]
+        n = len(users)
+        if n == 0:
+            segments_out.append(SegmentPatternItem(
+                segment=seg,
+                user_count=0,
+                avg_recipes_cooked_30d=0.0,
+                avg_notification_open_rate=0.0,
+                avg_items_registered_30d=0.0,
+                avg_items_wasted_30d=0.0,
+                avg_alert_response_hours=None,
+                avg_favorites=0.0,
+                top_features=[],
+            ))
+            continue
+
+        cooked_avg = sum(u["cooked"] for u in users) / n
+        or_avg = sum(u["open_rate"] for u in users) / n
+        reg_avg = sum(u["registered"] for u in users) / n
+        wasted_avg = sum(u["wasted"] for u in users) / n
+        fav_avg = sum(u["favorites"] for u in users) / n
+
+        alert_vals = [u["alert_h"] for u in users if u["alert_h"] is not None]
+        alert_avg = (sum(alert_vals) / len(alert_vals)) if alert_vals else None
+
+        # Top features dentro del segmento.
+        feat_totals: dict = defaultdict(int)
+        for u in users:
+            for feat, cnt in features_by_user.get(u["user_id"], {}).items():
+                feat_totals[feat] += cnt
+        top_feats = [f for f, _ in sorted(feat_totals.items(), key=lambda x: x[1], reverse=True)[:3]]
+
+        segments_out.append(SegmentPatternItem(
+            segment=seg,
+            user_count=n,
+            avg_recipes_cooked_30d=round(cooked_avg, 2),
+            avg_notification_open_rate=round(or_avg, 4),
+            avg_items_registered_30d=round(reg_avg, 2),
+            avg_items_wasted_30d=round(wasted_avg, 2),
+            avg_alert_response_hours=round(alert_avg, 2) if alert_avg is not None else None,
+            avg_favorites=round(fav_avg, 2),
+            top_features=top_feats,
+        ))
+
+    return SegmentsPatternsResponse(
+        period_days=days,
+        total_users_analyzed=len(activity_user_ids),
+        segments=segments_out,
+    )
 
 
 def get_match_distribution(db: Session, days: int = 30) -> list[dict]:
