@@ -899,21 +899,6 @@ def get_alert_response_times(
         FROM first_dispatch fd
         JOIN inventory_items ii ON ii.id = fd.item_id
         CROSS JOIN LATERAL (
-            SELECT MIN(occurred_at) AS first_action_at
-            FROM inventory_events
-            WHERE user_id = :user_id
-              AND item_id = (notif.properties->>'item_id')::uuid
-              AND event_type IN ('consumed', 'discarded')
-              AND occurred_at > notif.occurred_at
-        ) next_action
-        WHERE notif.user_id = :user_id
-          AND notif.event_name IN ('notification_received', 'notification_opened')
-          AND notif.occurred_at > NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
-          AND notif.properties::jsonb ? 'item_id'
-          AND (notif.properties->>'item_id')
-              ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-          AND next_action.first_action_at IS NOT NULL
-          AND next_action.first_action_at > notif.occurred_at;
             SELECT MIN(ie.occurred_at) AS first_action_at
             FROM inventory_events ie
             WHERE ie.user_id = :user_id
