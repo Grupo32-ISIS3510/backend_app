@@ -13,6 +13,7 @@ from app.analytics.schemas import (
     AnalyticsEventResponse,
     DashboardResponse,
     EventsSummaryResponse,
+    FavoritesDistributionResponse,
     InventoryEventsSummaryResponse,
     MarketProductTrendsResponse,
     MatchBucket,

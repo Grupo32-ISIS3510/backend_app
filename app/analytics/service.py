@@ -808,21 +808,14 @@ def get_alert_response_times(
                 AS hours
         FROM analytics_events notif
         CROSS JOIN LATERAL (
-            SELECT MIN(occurred_at) AS first_action_at
-            FROM inventory_events
-            WHERE user_id = :user_id
-              AND item_id = (notif.properties->>'item_id')::uuid
-              AND event_type IN ('consumed', 'discarded')
-              AND occurred_at > notif.occurred_at
-        ) next_action
-        WHERE notif.user_id = :user_id
-          AND notif.event_name IN ('notification_received', 'notification_opened')
-          AND notif.occurred_at > NOW() - (CAST(:days AS INTEGER) * INTERVAL '1 day')
-          AND notif.properties ? 'item_id'
-          AND (notif.properties->>'item_id')
-              ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-          AND next_action.first_action_at IS NOT NULL
-          AND next_action.first_action_at > notif.occurred_at;
+            SELECT MIN(ie.occurred_at) AS first_action_at
+            FROM inventory_events ie
+            WHERE ie.user_id = :user_id
+              AND ie.item_id = fd.item_id
+              AND ie.event_type IN ('consumed', 'discarded')
+              AND ie.occurred_at > fd.first_alert_at
+        ) act
+        WHERE act.first_action_at IS NOT NULL;
     """)
 
     rows = db.execute(deltas_sql, {"user_id": str(user_id), "days": days}).all()
